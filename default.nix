@@ -139,7 +139,8 @@ let
             }''
           else if func.__kind == "for" then let
             res = applyVars func.argc "${moduleName}_var" scope func.body;
-            varNames = builtins.genList (n: "${moduleName}_var${builtins.toString (scope + n)}") func.argc;
+            argc = if func.argc != null then func.argc else res.argc;
+            varNames = builtins.genList (n: "${moduleName}_var${builtins.toString (scope + n)}") argc;
             in ''
               for ${builtins.concatStringsSep "," varNames} in ${compileExpr scope func.expr} do
               ${
@@ -173,37 +174,18 @@ let
     };
 
     # "type definitions" for neovim
-    # you can override neovim-unwrapped too 
-    neovim = let kw = keywords; in attrs@{ plugins ? [], extraLuaPackages ? (_: []) }: rec {
-      stdlib = pkgs.callPackage ./nvim (attrs // {
+    neovim = attrs@{ neovim-unwrapped ? null, plugins ? [], extraLuaPackages ? (_: []) }:
+      pkgs.callPackage ./stdlib/nvim.nix (attrs // {
         inherit plugins extraLuaPackages;
-        # inherit isGetInfo;
-        inherit (kw) CALL RAW;
+        inherit (keywords) CALL MACRO APPLY LET;
         inherit (utils) compileExpr;
       });
-      keywords = let
-        reqletGen = names: func:
-          if names == [] then func
-          else result: reqletGen (builtins.tail names) (func (stdlib._reqlet (builtins.head names) result._name));
-        reqlet = args: {
-          __functor = self: arg: reqlet (args ++ [arg]);
-          __kind = "let";
-          vals = map stdlib.require (pop args);
-          func = reqletGen (map (x: "require(\"${x}\")") (pop args)) (end args);
-        };
-        reqlet' = args: {
-          __functor = self: arg: reqlet' (args ++ [arg]);
-        } // (keywords.MACRO (state:
-          keywords.APPLY
-            keywords.LET
-            (pop args)
-            (reqletGen (map (utils.compileExpr state) (pop args)) (end args))));
-      in {
-        inherit (stdlib) REQ REQ';
-        REQLET = arg: reqlet [arg];
-        REQLET' = arg: reqlet' [arg];
-      };
-    };
+
+    lua = attrs@{ lua ? null }:
+      pkgs.callPackage ./stdlib/lua.nix (attrs // {
+        inherit (keywords) CALL MACRO APPLY LET;
+        inherit (utils) compileExpr;
+      });
 
     keywords = rec {
       # pass some raw code to lua directly
@@ -280,10 +262,11 @@ let
 
       # Corresponding lua code: for ... in ...
       # argc -> expr -> (expr1 -> ... -> exprN -> stmts) -> stmts
-      FORIN = argc: expr: body: { __kind = "for"; inherit argc expr body; };
-      FORIN1 = FORIN 1;
-      FORIN2 = FORIN 2;
-      FORIN3 = FORIN 3;
+      FORIN' = argc: expr: body: { __kind = "for"; inherit argc expr body; };
+      FORIN = FORIN' null;
+      FORIN1 = FORIN' 1;
+      FORIN2 = FORIN' 2;
+      FORIN3 = FORIN' 3;
 
       # Issues a return statement
       # Corresponding lua code: return

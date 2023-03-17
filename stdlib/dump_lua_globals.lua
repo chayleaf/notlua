@@ -2,15 +2,6 @@ local seen = {}
 
 local result = {}
 
-local function mark(t)
-    seen[t] = true
-    for k,v in pairs(t) do
-        if type(v) == "table" and not seen[v] then
-            mark(v)
-        end
-    end
-end
-
 local function dump2(t, path, res)
     seen[t] = path
     if path ~= "" then
@@ -55,13 +46,8 @@ end
 
 local json = require "cjson"
 
--- mark globals before requiring package
-mark(_G)
-
-local package = @package@
-
 result = { __kind = "raw", _type = "table", _name = "" }
-dump2(package, "", result)
+dump2(_G, "", result)
 
 print(json.encode(result))
 

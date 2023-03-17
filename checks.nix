@@ -1,8 +1,9 @@
 { flake, lib }:
 let
 inherit (flake.utils) compileExpr compileStmt;
-inherit (flake.keywords) RAW PROP APPLY CALL MCALL SET OP2 AND ADD FORIN2 RETURN DEFUN IF ELSE ATTR LET LETREC MACRO;
+inherit (flake.keywords) RAW PROP APPLY CALL MCALL SET OP2 AND ADD FORIN RETURN DEFUN IF ELSE ATTR LET LETREC MACRO;
 nvim = flake.neovim {};
+lua = flake.lua {};
 defaultState = { moduleName = "m"; scope = 1; };
 chk = { stmt ? null, expr ? null, raw }:
   let result = if stmt != null then compileStmt defaultState stmt else compileExpr defaultState expr;
@@ -36,7 +37,7 @@ assert chk {
     })'';
 };
 assert chk {
-  stmt = FORIN2 (RAW "test") (k: (v: CALL (RAW "print") k v));
+  stmt = FORIN (RAW "test") (k: (v: CALL (RAW "print") k v));
   raw = ''
     for m_var1,m_var2 in test do
       print(m_var1, m_var2)
@@ -167,6 +168,27 @@ assert chk {
         m_arg1.test
       end;
     }'';
+};
+assert chk {
+  expr = lua.stdlib.print 5;
+  raw = "print(5)";
+};
+assert chk {
+  expr = (lua.keywords.REQ "cjson").encode;
+  raw = "require(\"cjson\").encode";
+};
+assert chk {
+  stmt = (lua.keywords.REQLET "cjson" (cjson: cjson.encode));
+  raw = ''
+    local m_var1 = require("cjson")
+    m_var1.encode'';
+};
+assert chk {
+  stmt = (lua.keywords.REQLET' (lua.stdlib.require "cjson") (lua.stdlib.require "cjson") (cjson: _: cjson.encode));
+  raw = ''
+    local m_var1 = require("cjson")
+    local m_var2 = require("cjson")
+    m_var1.encode'';
 };
 {
   name = "flake-checks";
