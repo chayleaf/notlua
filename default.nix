@@ -1,4 +1,4 @@
-{ callPackage, lib }:
+{ pkgs, lib, ... }:
 let
   # add a single ident level to code
   identLines = lines: builtins.concatStringsSep "\n" (map (x: "  ${x}") lines);
@@ -36,8 +36,8 @@ let
     else null;
 
   # vararg system
-  getInfo = func: if builtins.isFunction func && builtins.functionArgs func == {} then (
-    let ret = builtins.tryEval (func {__GET_INFO = true;}); in if ret.success then ret.value else null
+  getInfo = func: if builtins.isFunction func && lib.trace "ARGS" lib.traceVal (builtins.functionArgs func) == {} then (
+    let ret = func {__GET_INFO = true;}; in if builtins.isAttrs ret then ret else null
   ) else null;
   isGetInfo = arg: arg == { __GET_INFO = true; };
   argsSink = key: args: finally: arg: (
@@ -65,13 +65,16 @@ let
   wrapKey = scope: s: if keySafe s then s else "[${result.utils.compileExpr scope s}]";
 
   applyVars' = origScope: count: prefix: let self = (scope: func: argc:
+  let info = getInfo func; in (
     if count != null && scope == (origScope + count) then { result = func; }
     else if count == null && !builtins.isFunction func then { result = func; inherit argc; }
+    # else if info != null && info?_expr then { result = info._expr; inherit argc; }
+    else if info != null && info?_stmt then { result = info._stmt; inherit argc; }
     else self (scope + 1) (let
       args = builtins.functionArgs func;
       name = "${prefix}${builtins.toString scope}"; in
         if args == {} then func (result.keywords.RAW name)
-        else func (builtins.mapAttrs (k: v: result.keywords.RAW "${name}.${k}") args)) (argc + 1)
+        else func (builtins.mapAttrs (k: v: result.keywords.RAW "${name}.${k}") args)) (argc + 1))
   ); in self;
   applyVars = count: prefix: scope: func: applyVars' scope count prefix scope func 0;
 
@@ -207,7 +210,7 @@ let
     # "type definitions" for neovim
     # you can override neovim-unwrapped too 
     neovim = let kw = keywords; in attrs@{ plugins ? [], extraLuaPackages ? (_: []) }: rec {
-      stdlib = callPackage ./nvim (attrs // {
+      stdlib = pkgs.callPackage ./nvim (attrs // {
         inherit plugins extraLuaPackages;
         inherit isGetInfo;
         inherit (kw) CALL RAW;
@@ -217,6 +220,7 @@ let
         reqletGen = names: func:
           if names == [] then func
           else result: reqletGen (builtins.tail names) (func (stdlib._reqlet (builtins.head names) result._name)); in {
+        inherit (stdlib) REQ REQ';
         REQLET =
           argsSink "_stmt" [] (args: {
             __kind = "let";
@@ -335,4 +339,14 @@ let
       # (state -> { result = (stmt|expr), state = new state }) -> (stmt|expr)
       MACRO = callback: { __kind = "custom"; inherit callback; };
     };
-  }; in result
+  }; in {
+    options = {
+      notlua = lib.mkOption {
+        type = lib.types.attrsOf lib.types.anything;
+        description = "NotLua functions. TODO: docs";
+      };
+    };
+    config = {
+      notlua = result;
+    };
+  }

@@ -10,7 +10,30 @@ chk = { stmt ? null, expr ? null, raw }:
 inherit (nvim.keywords) REQLET;
 in
 assert chk {
-  stmt = FORIN2 (RAW "test") (k: v: CALL (RAW "print") k v);
+  stmt = [ (nvim.stdlib.vim.api.nvim_buf_set_option 5 "omnifunc" "v:lua.vim.lsp.omnifunc") ];
+  raw = ''vim.api.nvim_buf_set_option(5, "omnifunc", "v:lua.vim.lsp.omnifunc")'';
+};
+assert chk {
+  expr = nvim.stdlib.vim.api.nvim_create_autocmd "test" {
+    group = 0;
+    callback = { buf, ... }:
+      (LET
+        (nvim.stdlib.vim.filetype.match { inherit buf; })
+        (filetype: nvim.stdlib.print filetype));
+  };
+  raw = ''
+    vim.api.nvim_create_autocmd("test", {
+      callback = function(m_arg1)
+        local m_var2 = vim.filetype.match({
+          buf = m_arg1.buf;
+        })
+        print(m_var2)
+      end;
+      group = 0;
+    })'';
+};
+assert chk {
+  stmt = FORIN2 (RAW "test") (k: (v: CALL (RAW "print") k v));
   raw = ''
     for m_var1,m_var2 in test do
       print(m_var1, m_var2)
@@ -132,6 +155,15 @@ assert chk {
     local m_var1 = require("vim.shared")
     local m_var2 = require("vim._editor")
     print(m_var1)'';
+};
+assert chk {
+  expr = { key = { test }: test; };
+  raw = ''
+    {
+      key = function(m_arg1)
+        m_arg1.test
+      end;
+    }'';
 };
 {
   name = "flake-checks";
