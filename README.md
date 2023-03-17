@@ -101,6 +101,11 @@ above, just `print a b` is enough! However, if a function has zero
 arguments, or if you want to call a table, you will still have to use
 `CALL`.
 
+The bindings are type-aware and will not let you call a function with a
+wrong argument count or set a Vim option to a wrong type (or any
+other module's value, for that matter). There is currently no way to
+disable the checks (but maybe Nix provides a way to ignore assertions?)
+
 Since I only use this for configuring Neovim, there are likely many Lua
 features might not be available (for example, you can't generate tables
 with both numeric and keyword keys).
