@@ -43,7 +43,7 @@ let
   applyVars' = origScope: count: prefix: let self = (scope: func: argc:
   (
     if count != null && scope == (origScope + count) then { result = func; }
-    else if count == null && !builtins.isFunction func then { result = func; inherit argc; }
+    else if count == null && !(builtins.isFunction func) then { result = func; inherit argc; }
     else self (scope + 1) (let
       args = builtins.functionArgs func;
       name = "${prefix}${builtins.toString scope}"; in
@@ -324,7 +324,7 @@ let
       # expr1 -> ... -> exprN -> (expr1 -> ... -> exprN -> stmt) -> stmt
       LET = arg1: arg2: {
         __functor = self: arg: {
-          inherit (self) __kind;
+          inherit (self) __kind __functor;
           vals = self.vals ++ [ self.func ];
           func = arg;
         };
@@ -338,7 +338,7 @@ let
       # ((expr1 -> ... -> exprN) ->)* (expr1 -> ... -> exprN -> stmt) -> stmt
       LETREC = arg1: arg2: {
         __functor = self: arg: {
-          inherit (self) __kind;
+          inherit (self) __kind __functor;
           vals = self.vals ++ [ self.func ];
           func = arg;
         };
@@ -354,7 +354,7 @@ let
   }; in {
     options = {
       notlua = lib.mkOption {
-        type = lib.types.attrsOf lib.types.anything;
+        # type = lib.types.unspecified;
         description = "NotLua functions. TODO: docs";
       };
     };
