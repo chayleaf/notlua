@@ -4,16 +4,6 @@ let
   identLines = lines: builtins.concatStringsSep "\n" (map (x: "  ${x}") lines);
   ident = code: identLines (lib.splitString "\n" code);
 
-  # convert list into pairs
-  pairsv = ret: list: key: if list == [] then {
-      list = ret;
-      leftover = key;
-    } else pairsk (ret ++ [[key (builtins.head list)]]) (builtins.tail list);
-  pairsk = ret: list: if list == [] then {
-      list = ret;
-      leftover = null;
-    } else pairsv ret (builtins.tail list) (builtins.head list);
-
   # list end
   end = list: builtins.elemAt list (builtins.length list - 1);
   # pop list end
@@ -28,25 +18,11 @@ let
     else if builtins.isPath val || builtins.isString val then "string"
     else if builtins.isInt val || builtins.isFloat val then "number"
     else if builtins.isNull val then "nil"
-    else if builtins.isFunction val then let info = getInfo val; in (
-      if info != null && info?_expr then luaType info._expr
-      else if info != null && info?_stmt then luaType info._stmt
-      else "function"
-    ) else if builtins.isBool val then "boolean"
+    else if builtins.isFunction val then "function"
+    else if builtins.isBool val then "boolean"
     else null;
 
   # vararg system
-  getInfo = func: if builtins.isFunction func && lib.trace "ARGS" lib.traceVal (builtins.functionArgs func) == {} then (
-    let ret = func {__GET_INFO = true;}; in if builtins.isAttrs ret then ret else null
-  ) else null;
-  isGetInfo = arg: arg == { __GET_INFO = true; };
-  argsSink = key: args: finally: arg: (
-    if isGetInfo arg then
-      {${key} = finally args;}
-    else if builtins.isAttrs arg && arg?__kind && arg.__kind == "unroll" then
-      {${key} = finally (args ++ arg.list);}
-    else
-      argsSink key (args ++ [arg]) finally);
 
   # The following functions may take state: moduleName and scope
   # scope is how many variables are currently in scope
@@ -65,11 +41,9 @@ let
   wrapKey = scope: s: if keySafe s then s else "[${result.utils.compileExpr scope s}]";
 
   applyVars' = origScope: count: prefix: let self = (scope: func: argc:
-  let info = getInfo func; in (
+  (
     if count != null && scope == (origScope + count) then { result = func; }
     else if count == null && !builtins.isFunction func then { result = func; inherit argc; }
-    # else if info != null && info?_expr then { result = info._expr; inherit argc; }
-    else if info != null && info?_stmt then { result = info._stmt; inherit argc; }
     else self (scope + 1) (let
       args = builtins.functionArgs func;
       name = "${prefix}${builtins.toString scope}"; in
@@ -81,10 +55,7 @@ let
   result = rec {
     utils = rec {
       compileFunc = state@{moduleName, scope}: id: expr:
-      (let info = getInfo expr; in
-      if info != null && info?_expr then compileFunc state id info._expr
-      else if info != null && info?_stmt then compileFunc state id info._stmt
-      else let
+      (let
         res = applyVars null "${moduleName}_arg" scope expr;
         argc = res.argc;
         func = res.result;
@@ -101,15 +72,7 @@ let
         else if builtins.isBool func then (if func then "true" else "false")
         else if builtins.isNull func then "nil"
         else if builtins.isPath func then compileExpr state (builtins.toString func)
-        else if builtins.isFunction func then let
-          info = getInfo func; in
-          if info != null && info?_name then
-            info._name
-          else if info != null && info?_expr then
-            compileExpr state info._expr
-          else if info != null && info?_stmt then
-            assert false; null
-          else (compileFunc state "" func)
+        else if builtins.isFunction func then (compileFunc state "" func)
         else if builtins.isList func then ''
           {
           ${ident (builtins.concatStringsSep "\n" (map (x: (compileExpr state x) + ";" ) func))}
@@ -186,19 +149,21 @@ let
           else if func.__kind == "return" then
             "return ${compileExpr state func.expr}"
           else if func.__kind == "if" then
+            let func' =
+              if func.fallback != null || (builtins.elemAt (end func.conds) 0) != true then
+                func
+              else
+                { conds = pop func.conds; fallback = builtins.elemAt (end func.conds) 1; };
+            in
             (lib.removeSuffix "else" ((builtins.concatStringsSep "" (map
               (cond: ''
                 if ${compileExpr state (builtins.elemAt cond 0)} then
                 ${ident (compileStmt state (builtins.elemAt cond 1))}
                 else'')
-              func.conds))
-            + (if func.fallback != null then "\n${ident (compileStmt state func.fallback)}\n" else ""))) + "end"
+              func'.conds))
+            + (if func'.fallback != null then "\n${ident (compileStmt state func'.fallback)}\n" else ""))) + "end"
           else if func.__kind == "custom" then
             let res = func.callback state; in compileStmt res.state res.result
-          else compileExpr state func
-        ) else if builtins.isFunction func then (let
-          info = getInfo func; in
-          if info != null && info?_stmt then compileStmt state info._stmt
           else compileExpr state func
         ) else compileExpr state func
       );
@@ -212,27 +177,31 @@ let
     neovim = let kw = keywords; in attrs@{ plugins ? [], extraLuaPackages ? (_: []) }: rec {
       stdlib = pkgs.callPackage ./nvim (attrs // {
         inherit plugins extraLuaPackages;
-        inherit isGetInfo;
+        # inherit isGetInfo;
         inherit (kw) CALL RAW;
         inherit (utils) compileExpr;
       });
       keywords = let
         reqletGen = names: func:
           if names == [] then func
-          else result: reqletGen (builtins.tail names) (func (stdlib._reqlet (builtins.head names) result._name)); in {
+          else result: reqletGen (builtins.tail names) (func (stdlib._reqlet (builtins.head names) result._name));
+        reqlet = args: {
+          __functor = self: arg: reqlet (args ++ [arg]);
+          __kind = "let";
+          vals = map stdlib.require (pop args);
+          func = reqletGen (map (x: "require(\"${x}\")") (pop args)) (end args);
+        };
+        reqlet' = args: {
+          __functor = self: arg: reqlet' (args ++ [arg]);
+        } // (keywords.MACRO (state:
+          keywords.APPLY
+            keywords.LET
+            (pop args)
+            (reqletGen (map (utils.compileExpr state) (pop args)) (end args))));
+      in {
         inherit (stdlib) REQ REQ';
-        REQLET =
-          argsSink "_stmt" [] (args: {
-            __kind = "let";
-            vals = map stdlib.require (pop args);
-            func = reqletGen (map (x: "require(\"${x}\")") (pop args)) (end args);
-          });
-        REQLET' =
-          argsSink "_stmt" [] (args: keywords.MACRO (state: {
-            __kind = "let";
-            vals = pop args;
-            func = reqletGen (map (utils.compileExpr state) (pop args)) (end args);
-          }));
+        REQLET = arg: reqlet [arg];
+        REQLET' = arg: reqlet' [arg];
       };
     };
 
@@ -245,22 +214,35 @@ let
       # expr -> identifier -> expr
       PROP = expr: name: { __kind = "prop"; inherit expr name; };
 
-      # Escape a list so it can be passed to vararg functions
-      UNROLL = list: { __kind = "unroll"; inherit list; };
+      # Apply a list of arguments to a function/operator
+      APPLY = func: list: if list == [] then func else APPLY (func (builtins.head list)) (builtins.tail list);
 
-      # Apply a list of arguments to a function/operator (probably more useful than the above)
-      APPLY = func: list: func (UNROLL list);
-
-      # Call a function
+      # Call something
       # Useful if you need to call a zero argument function, or if you need to handle some weird metatable stuff
       # corresponding lua code: someFunc()
       # expr -> arg1 -> ... -> argN -> expr
-      CALL = func: argsSink "_expr" [] (args: { __kind = "call"; _func = func; _args = args; });
+      CALL = func: {
+        __functor = self: arg: {
+          inherit (self) __functor _func __kind;
+          _args = self._args ++ [ arg ];
+        };
+        __kind = "call";
+        _func = func;
+        _args = [];
+      };
 
       # Call a method
       # corresponding lua code: someTable:someFunc()
       # expr -> identifier -> arg1 -> ... -> argN -> expr
-      MCALL = val: name: argsSink "_expr" [] (args: { __kind = "mcall"; inherit val name args; });
+      MCALL = val: name: {
+        __functor = self: arg: {
+          inherit (self) __functor __kind val name;
+          args = self.args ++ [arg];
+        };
+        __kind = "mcall";
+        inherit val name;
+        args = [];
+      };
 
       # corresponding lua code: =
       # expr -> expr -> stmt
@@ -270,7 +252,15 @@ let
       NOT = OP1 "~";
 
       # opName -> expr1 -> ... -> exprN -> expr
-      OP2 = op: argsSink "_expr" [] (args: { __kind = "op2"; inherit op args; });
+      OP2 = op: arg1: arg2: {
+        __functor = self: arg: {
+          inherit (self) __functor __kind op;
+          args = self.args ++ [ arg ];
+        };
+        __kind = "op2";
+        inherit op;
+        args = [arg1 arg2];
+      };
 
       # The following all have the signature
       # expr1 -> ... -> exprN -> expr
@@ -305,17 +295,21 @@ let
       DEFUN = func: { __kind = "defun"; inherit func; };
 
       # Corresponding lua code: if then (else?)
-      # [[cond expr]] -> fallbackExpr? -> stmts
-      IFELSE' = conds: fallback: { __kind = "if"; inherit fallback; conds = if builtins.isList (builtins.elemAt conds 0) then conds else [conds]; };
-
-      # Corresponding lua code: if then (else?)
       # (expr -> stmts ->)* (fallback expr ->)? stmts
-      IF = argsSink "_stmt" [] (args:
-        let pairs = pairsk [] args; in
-        if pairs.leftover == null && builtins.length pairs.list > 1 && builtins.elemAt (end pairs.list) 0 == ELSE
-        then IFELSE' (pop pairs.list) (builtins.elemAt (end pairs.list) 1)
-        else IFELSE' pairs.list pairs.leftover
-      );
+      IF = expr: stmt: {
+        __functor = self: arg:
+          if self.fallback == null then {
+            inherit (self) __kind __functor conds;
+            fallback = arg;
+          } else {
+            inherit (self) __kind __functor;
+            conds = self.conds ++ [[self.fallback arg]];
+            fallback = null;
+          };
+        __kind = "if";
+        fallback = null;
+        conds = [[expr stmt]];
+      };
 
       # Signifies the fallback branch in IF. May only be the last branch.
       # Note that you may also omit it and just include the last branch without a preceding condition.
@@ -328,12 +322,30 @@ let
       # Creates variables and passes them to the function
       # Corresponding lua code: local ... = ...
       # expr1 -> ... -> exprN -> (expr1 -> ... -> exprN -> stmt) -> stmt
-      LET = argsSink "_stmt" [] (args: { __kind = "let"; vals = pop args; func = end args; });
+      LET = arg1: arg2: {
+        __functor = self: arg: {
+          inherit (self) __kind;
+          vals = self.vals ++ [ self.func ];
+          func = arg;
+        };
+        __kind = "let";
+        vals = [arg1];
+        func = arg2;
+      };
 
       # Creates variables and passes them to the function as well as variable binding code
       # Corresponding lua code: local ... = ...
       # ((expr1 -> ... -> exprN) ->)* (expr1 -> ... -> exprN -> stmt) -> stmt
-      LETREC = argsSink "_stmt" [] (args: { __kind = "letrec"; vals = pop args; func = end args; });
+      LETREC = arg1: arg2: {
+        __functor = self: arg: {
+          inherit (self) __kind;
+          vals = self.vals ++ [ self.func ];
+          func = arg;
+        };
+        __kind = "letrec";
+        vals = [arg1];
+        func = arg2;
+      };
 
       # Process arbitrary code during compilation to be able to access state
       # (state -> { result = (stmt|expr), state = new state }) -> (stmt|expr)

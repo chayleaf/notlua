@@ -10,8 +10,11 @@ chk = { stmt ? null, expr ? null, raw }:
 inherit (nvim.keywords) REQLET;
 in
 assert chk {
-  stmt = [ (nvim.stdlib.vim.api.nvim_buf_set_option 5 "omnifunc" "v:lua.vim.lsp.omnifunc") ];
-  raw = ''vim.api.nvim_buf_set_option(5, "omnifunc", "v:lua.vim.lsp.omnifunc")'';
+  expr = a: (nvim.stdlib.vim.api.nvim_buf_set_option a "omnifunc" "v:lua.vim.lsp.omnifunc");
+  raw = ''
+    function(m_arg1)
+      vim.api.nvim_buf_set_option(m_arg1, "omnifunc", "v:lua.vim.lsp.omnifunc")
+    end'';
 };
 assert chk {
   expr = nvim.stdlib.vim.api.nvim_create_autocmd "test" {

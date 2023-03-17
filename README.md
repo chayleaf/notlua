@@ -7,7 +7,9 @@ right place! Now you can also write them in Nix!
 - it accidentally looks like lisp
 - first-class Neovim support
 - that's about it?
-- please don't forget currying doesn't work
+
+- limitations:
+- many (probably)
 
 Simple examples: see [checks](./checks.nix).
 

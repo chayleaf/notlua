@@ -6,7 +6,7 @@
 , wrapNeovimUnstable
 
 , CALL
-, isGetInfo
+# , isGetInfo
 , compileExpr
 
 , plugins
@@ -22,9 +22,9 @@ update = self: prefix: lib.mapAttrs (k: v: let
     if v.__kind == "rec" then
       lib.attrByPath (lib.splitString "." v.path) null self
     else if v.__kind == "raw" && v._type == "function" then
-        (args:
-          if isGetInfo args then v'
-          else CALL v' args)
+      v' // {
+        __functor = self: CALL self;
+      }
     else v'
   ) else if builtins.isAttrs v then v'
   else if prefix != "" && k == "_name" then
