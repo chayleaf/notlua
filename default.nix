@@ -209,7 +209,7 @@ let
       PROP = expr: name: (EMACRO ({ state, ... }:
         assert lib.assertMsg (checkType (luaTypeNoFunctors expr) (luaType { })) "Unable to get property ${name} of a ${printTypeNoFunctors expr}!";
         compileExpr state (UNSAFE_PROP expr name)))
-          // (if builtins.isAttrs expr && expr?_name && builtins.hasAttr name expr then builtins.getAttr name expr else {});
+      // (if builtins.isAttrs expr && expr?_name && builtins.hasAttr name expr then builtins.getAttr name expr else { });
       UNSAFE_PROP = expr: name: EMACRO ({ state, ... }:
         "${wrapExpr (compileExpr state expr)}.${name}");
 
@@ -286,7 +286,7 @@ let
       OP1' = type: types: op: expr:
         (OP1 op expr)
         // { types = types ++ [ null "unknown" ]; }
-        // (if type != null then { _type = type; } else {});
+        // (if type != null then { _type = type; } else { });
       OP1 = op: expr: EMACRO ({ state, types ? [ ], ... }:
         assert lib.assertMsg
           (types == [ ] || builtins.elem (printTypeNoFunctors expr) types)
@@ -304,8 +304,8 @@ let
       # opName -> expr1 -> ... -> exprN -> expr
       OP2' = type: types: op: arg1: arg2:
         (OP2 op arg1 arg2)
-        // (if types != null then { types = types ++ [ null "unknown" ]; } else {})
-        // (if type != null then { _type = type; } else {});
+        // (if types != null then { types = types ++ [ null "unknown" ]; } else { })
+        // (if type != null then { _type = type; } else { });
       OP2 = op: arg1: arg2: EMACRO'
         ({ args, state, types ? [ ], ... }:
           assert lib.assertMsg

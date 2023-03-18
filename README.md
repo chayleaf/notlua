@@ -4,7 +4,7 @@ Ever wanted to write Lua programs in... not Lua? Well, you're in the
 right place! Now you can also write them in Nix!
 
 features:
-- TYPE SYSTEM (well, only those types which can be checked are checked)
+- TYPE SYSTEM (well, only those types that can be checked are checked)
 - it accidentally looks like lisp
 - first-class Neovim support
 - that's about it?
