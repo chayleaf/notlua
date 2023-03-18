@@ -31,6 +31,10 @@ let
     else if builtins.isBool val then { _type = "boolean"; }
     else null;
 
+  luaTypeNoFunctors = val:
+    if builtins.isAttrs val && val?__functor then null
+    else luaType val;
+
   printType = val:
     let type = luaType val; in if type == null || !(builtins.isAttrs type) || !(type?_type) then null else type._type;
 
@@ -201,7 +205,7 @@ let
       # Corresponding lua code: table.property
       # expr -> string -> expr
       PROP = expr: name: EMACRO ({ state, ... }:
-        assert lib.assertMsg (checkType (luaType expr) (luaType { })) "Unable to get property ${name} of a ${printType expr}!";
+        assert lib.assertMsg (checkType (luaTypeNoFunctors expr) (luaType { })) "Unable to get property ${name} of a ${printType expr}!";
         compileExpr state (UNSAFE_PROP expr name));
       UNSAFE_PROP = expr: name: EMACRO ({ state, ... }:
         "${wrapExpr (compileExpr state expr)}.${name}");
@@ -240,7 +244,7 @@ let
       SET = expr: val: SMACRO'
         ({ args, state, ... }:
           assert lib.assertMsg
-            (checkType (luaType expr) (luaType val))
+            (checkType (luaType expr) (luaTypeNoFunctors val))
             "error: setting ${compileExpr state expr} to wrong type. It should be ${printType expr} but is ${printType val}";
           compileStmt state (APPLY UNSAFE_SET args))
         expr
@@ -399,7 +403,7 @@ let
       IDX = table: key: EMACRO ({ state, ... }:
         assert
         lib.assertMsg
-          (checkType (luaType table) (luaType { }))
+          (checkType (luaTypeNoFunctors table) (luaType { }))
           "Unable to get key ${compileExpr state key} of a ${printType table} ${compileExpr state table}!";
         compileExpr state (UNSAFE_IDX table key));
 

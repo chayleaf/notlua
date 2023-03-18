@@ -214,11 +214,11 @@ assert chk
 };
 assert chk
 {
-  stmt = LET (lua.keywords.REQ' (lua.stdlib.require "cjson")) (lua.keywords.REQ' (lua.stdlib.require "cjson")) (cjson: _: cjson.encode);
+  stmt = LET (lua.keywords.REQ' (PROP (lua.stdlib.require "cjson") "encode")) (lua.keywords.REQ' (lua.stdlib.require "cjson")) (encode: _: encode);
   raw = ''
-    local m_var1 = require("cjson")
+    local m_var1 = require("cjson").encode
     local m_var2 = require("cjson")
-    m_var1.encode'';
+    m_var1'';
 };
 assert chk
 {
