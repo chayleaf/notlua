@@ -56,7 +56,7 @@ let
 
   # wrap an expression in parentheses if necessary
   # probably not the best heuristics, but good enough to make the output readable
-  wrapSafe = s: (builtins.match "^[-\"a-zA-Z0-9_.()]*$" s) != null;
+  wrapSafe = s: (builtins.match "^[-\"a-zA-Z0-9_.()]*$" (builtins.replaceStrings [ "[" "]" ] [ "" "" ] s)) != null;
   wrapExpr = s: if wrapSafe s then s else "(${s})";
 
   # Same, but for table keys
@@ -163,14 +163,12 @@ let
     neovim = attrs@{ neovim-unwrapped ? null, plugins ? [ ], extraLuaPackages ? (_: [ ]) }:
       pkgs.callPackage ./stdlib/nvim.nix (attrs // {
         inherit plugins extraLuaPackages;
-        inherit (keywords) CALL LMACRO;
-        inherit (utils) compileExpr wrapExpr;
+        inherit keywords utils;
       });
 
     lua = attrs@{ lua ? null }:
       pkgs.callPackage ./stdlib/lua.nix (attrs // {
-        inherit (keywords) CALL LMACRO;
-        inherit (utils) compileExpr wrapExpr;
+        inherit keywords utils;
       });
 
     keywords = let inherit (utils) compileExpr compileFunc compileStmt; in rec {
@@ -297,9 +295,9 @@ let
       # The following operators have the signature
       # expr -> expr
       LEN = OP1' "number" [ "string" "table" ] "#";
-      NOT = OP1 "boolean" null "not ";
+      NOT = OP1' "boolean" null "not ";
       UNM = OP1' "number" [ "number" ] "-";
-      BITNOT = OP1 "number" [ "number" ] "~";
+      BITNOT = OP1' "number" [ "number" ] "~";
 
       # opName -> expr1 -> ... -> exprN -> expr
       OP2' = type: types: op: arg1: arg2:
@@ -522,10 +520,13 @@ let
             };
             kvs = lib.zipListsWith (key: val: { inherit key val; }) names values;
             predefVars = builtins.filter ({ key, val }: val?predef && val.predef) kvs;
-            predefs = catLines (map ({ key, val }:
-              if !(val?local) || val.local then "local ${key}" else "${key} = nil"
-            ) predefVars);
-          in (if predefs == "" then "" else (predefs + "\n")) +
+            predefs = catLines (map
+              ({ key, val }:
+                if !(val?local) || val.local then "local ${key}" else "${key} = nil"
+              )
+              predefVars);
+          in
+          (if predefs == "" then "" else (predefs + "\n")) +
           ''
             ${catLines (map ({ key, val }:
               "${if (!(val?local) || val.local) && ((!(val?predef)) || (!val.predef)) then "local " else ""}${key} = ${val.code}"

@@ -1,11 +1,10 @@
 { lib
 , stdenvNoCC
 , substituteAll
+, writeTextFile
 
-, CALL
-, LMACRO
-, compileExpr
-, wrapExpr
+, keywords
+, utils
 
 , lua
 , ...
@@ -14,13 +13,16 @@
 # TODO: bfs instead of dfs in var dumps
 
 let
-  common = import ./common.nix { inherit lib CALL LMACRO compileExpr wrapExpr getExprTypeDefs typeDefs; };
+  common = import ./common.nix { inherit lib keywords utils getExprTypeDefs typeDefs; };
   lua' = lua.withPackages (p: [ p.cjson ]);
 
   typeDefs = builtins.fromJSON (builtins.readFile (stdenvNoCC.mkDerivation {
     phases = [ "installPhase" ];
     name = "lua-types.json";
-    dumpProgram = ./dump_lua_globals.lua;
+    dumpProgram = writeTextFile {
+      name = "dump-lua-expr.lua";
+      text = common.dumpLuaExpr (keywords.RAW "_G");
+    };
     nativeBuildInputs = [ lua' ];
     installPhase = ''
       export HOME="$TMPDIR"
@@ -31,9 +33,9 @@ let
   getExprTypeDefs = expr: builtins.fromJSON (builtins.readFile (stdenvNoCC.mkDerivation {
     phases = [ "installPhase" ];
     name = "lua-types-${expr}.json";
-    dumpProgram = substituteAll {
-      src = ./dump_expr.lua;
-      inherit expr;
+    dumpProgram = writeTextFile {
+      name = "dump-lua-expr-${expr}.lua";
+      text = common.dumpLuaExpr (keywords.RAW expr);
     };
     nativeBuildInputs = [ lua' ];
     installPhase = ''
