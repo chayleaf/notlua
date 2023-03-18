@@ -219,10 +219,17 @@ let
       # expr -> arg1 -> ... -> argN -> expr
       CALL = func: EMACRO' ({ args, state, ... }:
         assert lib.assertMsg
+          (!(builtins.elem (printType func) [ "number" "boolean" "nil" "string" ]))
+          ("Calling a ${printType args} (${compileExpr state func}) might be a bad idea! "
+            + "If you still want to do it, use CALL_UNSAFE instead of CALL");
+        assert lib.assertMsg
           ((!(func?_minArity) || (builtins.length args) >= func._minArity)
             &&
             (!(func?_maxArity) || (builtins.length args) <= func._maxArity))
-          "error: wrong function arity for ${compileExpr state func}! expected at least ${builtins.toString func._minArity}; found ${builtins.toString (builtins.length args)}";
+          ("error: wrong function arity for ${compileExpr state func}! "
+            + "expected at least ${builtins.toString func._minArity}; "
+            + (if func?_maxArity then "at most ${builtins.toString func._maxArity}; " else "")
+            + "found ${builtins.toString (builtins.length args)}");
         compileExpr state (APPLY (UNSAFE_CALL func) args)
       );
       UNSAFE_CALL = func: EMACRO' ({ args, state, ... }:
