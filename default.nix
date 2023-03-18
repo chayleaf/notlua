@@ -21,7 +21,7 @@ let
     else type // (notlua.keywords.RAW name);
 
   luaType = val:
-    if builtins.isAttrs val && val?_type then lib.filterAttrs (k: v: k == "_type" || k == "_minArity" || k == "_maxArity") val
+    if builtins.isAttrs val && val?_type && val._type != null then lib.filterAttrs (k: v: k == "_type" || k == "_minArity" || k == "_maxArity") val
     else if builtins.isAttrs val && val?__kind then null
     else if builtins.isList val || builtins.isAttrs val then { _type = "table"; }
     else if builtins.isPath val || builtins.isString val then { _type = "string"; }
@@ -36,7 +36,9 @@ let
     else luaType val;
 
   printType = val:
-    let type = luaType val; in if type == null || !(builtins.isAttrs type) || !(type?_type) then null else type._type;
+    let type = luaType val; in if type == null || !(builtins.isAttrs type) || !(type?_type) || type._type == null then "unknown" else type._type;
+  printTypeNoFunctors = val:
+    let type = luaTypeNoFunctors val; in if type == null || !(builtins.isAttrs type) || !(type?_type) || type._type == null then "unknown" else type._type;
 
   checkType = type1: type2: if type1 == null || type2 == null then true else
   (builtins.all
@@ -204,9 +206,10 @@ let
       # Access a property
       # Corresponding lua code: table.property
       # expr -> string -> expr
-      PROP = expr: name: EMACRO ({ state, ... }:
-        assert lib.assertMsg (checkType (luaTypeNoFunctors expr) (luaType { })) "Unable to get property ${name} of a ${printType expr}!";
-        compileExpr state (UNSAFE_PROP expr name));
+      PROP = expr: name: (EMACRO ({ state, ... }:
+        assert lib.assertMsg (checkType (luaTypeNoFunctors expr) (luaType { })) "Unable to get property ${name} of a ${printTypeNoFunctors expr}!";
+        compileExpr state (UNSAFE_PROP expr name)))
+          // (if builtins.isAttrs expr && expr?_name && builtins.hasAttr name expr then builtins.getAttr name expr else {});
       UNSAFE_PROP = expr: name: EMACRO ({ state, ... }:
         "${wrapExpr (compileExpr state expr)}.${name}");
 
@@ -221,7 +224,7 @@ let
         assert lib.assertMsg
           (!(builtins.elem (printType func) [ "number" "boolean" "nil" "string" ]))
           ("Calling a ${printType args} (${compileExpr state func}) might be a bad idea! "
-            + "If you still want to do it, use CALL_UNSAFE instead of CALL");
+            + "If you still want to do it, use UNSAFE_CALL instead of CALL");
         assert lib.assertMsg
           ((!(func?_minArity) || (builtins.length args) >= func._minArity)
             &&
@@ -240,10 +243,23 @@ let
       # corresponding lua code: someTable:someFunc()
       # expr -> identifier -> arg1 -> ... -> argN -> expr
       MCALL = val: name: EMACRO' ({ args, state, ... }:
+        assert lib.assertMsg
+          (builtins.elem (printType val) [ null "unknown" "table" ])
+          ("Calling a method of a ${printType val} (${compileExpr state val}) might be a bad idea! "
+            + "If you still want to do it, use UNSAFE_MCALL instead of MCALL");
+        compileExpr state (APPLY (UNSAFE_MCALL val name) args));
+      UNSAFE_MCALL = val: name: EMACRO' ({ args, state, ... }:
         "${wrapExpr (compileExpr state val)}:${name}(${catComma' (map (compileExpr state) args)})");
+
       # Call a property
       # corresponding lua code: someTable.someFunc()
       PCALL = val: name: EMACRO' ({ args, state, ... }:
+        assert lib.assertMsg
+          (builtins.elem (printType val) [ null "unknown" "table" ])
+          ("Calling a property of a ${printType val} (${compileExpr state val}) might be a bad idea! "
+            + "If you still want to do it, use UNSAFE_PCALL instead of PCALL");
+        compileExpr state (APPLY (UNSAFE_PCALL val name) args));
+      UNSAFE_PCALL = val: name: EMACRO' ({ args, state, ... }:
         "${wrapExpr (compileExpr state val)}.${name}(${catComma' (map (compileExpr state) args)})");
 
       # corresponding lua code: a = b
@@ -252,7 +268,7 @@ let
         ({ args, state, ... }:
           assert lib.assertMsg
             (checkType (luaType expr) (luaTypeNoFunctors val))
-            "error: setting ${compileExpr state expr} to wrong type. It should be ${printType expr} but is ${printType val}";
+            "error: setting ${compileExpr state expr} to wrong type. It should be ${printType expr} but is ${printTypeNoFunctors val}";
           compileStmt state (APPLY UNSAFE_SET args))
         expr
         val;
@@ -267,40 +283,57 @@ let
         val;
 
       # opName -> expr -> expr
-      OP1 = op: expr: EMACRO ({ state, ... }:
+      OP1' = type: types: op: expr:
+        (OP1 op expr)
+        // { types = types ++ [ null "unknown" ]; }
+        // (if type != null then { _type = type; } else {});
+      OP1 = op: expr: EMACRO ({ state, types ? [ ], ... }:
+        assert lib.assertMsg
+          (types == [ ] || builtins.elem (printTypeNoFunctors expr) types)
+          ("Trying to apply `${op}` to an expression ${compileExpr state expr} of type ${printTypeNoFunctors expr}! "
+            + "If that's what you intended, try OP1 \"${op}\" <expr> instead.");
         "${op}${wrapExpr (compileExpr state expr)}");
 
       # The following operators have the signature
       # expr -> expr
-      LEN = OP1 "#";
-      NOT = OP1 "not ";
-      UNM = OP1 "-";
+      LEN = OP1' "number" [ "string" "table" ] "#";
+      NOT = OP1 "boolean" [ "boolean" ] "not ";
+      UNM = OP1' "number" [ "number" ] "-";
+      BITNOT = OP1 "number" [ "number" ] "~";
 
       # opName -> expr1 -> ... -> exprN -> expr
+      OP2' = type: types: op: arg1: arg2:
+        (OP2 op arg1 arg2)
+        // (if types != null then { types = types ++ [ null "unknown" ]; } else {})
+        // (if type != null then { _type = type; } else {});
       OP2 = op: arg1: arg2: EMACRO'
-        ({ args, state, ... }:
+        ({ args, state, types ? [ ], ... }:
+          assert lib.assertMsg
+            (types == [ ] || (builtins.all (lib.flip builtins.elem types) (map printTypeNoFunctors args)))
+            ("Trying to apply `${op}` to expressions ${catComma' (map (compileExpr state) args)} of types "
+              + "${catComma' (map printTypeNoFunctors args)}! If that's what you intended, try OP2 \"${op}\" <exprs> instead");
           builtins.concatStringsSep " ${op} " (map (x: wrapExpr (compileExpr state x)) args))
         arg1
         arg2;
 
       # The following all have the signature
       # expr1 -> ... -> exprN -> expr
-      EQ = OP2 "==";
-      NE = OP2 "~=";
-      GT = OP2 ">";
-      LT = OP2 "<";
-      GE = OP2 ">=";
-      LE = OP2 "<=";
+      EQ = OP2' "boolean" null "==";
+      NE = OP2' "boolean" null "~=";
+      GT = OP2' "boolean" [ "number" "string" "table" ] ">";
+      LT = OP2' "boolean" [ "number" "string" "table" ] "<";
+      GE = OP2' "boolean" [ "number" "string" "table" ] ">=";
+      LE = OP2' "boolean" [ "number" "string" "table" ] "<=";
       AND = OP2 "and";
       OR = OP2 "or";
 
-      CAT = OP2 "..";
-      ADD = OP2 "+";
-      SUB = OP2 "-";
-      MUL = OP2 "*";
-      DIV = OP2 "/";
-      MOD = OP2 "%";
-      POW = OP2 "^";
+      CAT = OP2' "string" null "..";
+      ADD = OP2' "number" [ "number" ] "+";
+      SUB = OP2' "number" [ "number" ] "-";
+      MUL = OP2' "number" [ "number" ] "*";
+      DIV = OP2' "number" [ "number" ] "/";
+      MOD = OP2' "number" [ "number" ] "%";
+      POW = OP2' "number" [ "number" ] "^";
 
       # Corresponding lua code: for ... in ...
       # argc -> expr -> (expr1 -> ... -> exprN -> stmts) -> stmts
@@ -323,6 +356,10 @@ let
         ({ args, state, ... }:
           let
             vars =
+              assert lib.assertMsg
+                (builtins.all (x: builtins.elem (printTypeNoFunctors x) [ "unknown" "number" ]) args)
+                ("Error: trying to use FORRANGE on values of types ${catComma' (map printTypeNoFunctors args)}! "
+                  + "Please don't do that.");
               if builtins.length args == 3 || builtins.length args == 4 then
                 map (compileExpr state) (lib.init args)
               else throw "for range can only receive 3 or 4 arguments";
@@ -408,8 +445,7 @@ let
       # Corresponding lua code: table[key]
       # table -> key -> expr
       IDX = table: key: EMACRO ({ state, ... }:
-        assert
-        lib.assertMsg
+        assert lib.assertMsg
           (checkType (luaTypeNoFunctors table) (luaType { }))
           "Unable to get key ${compileExpr state key} of a ${printType table} ${compileExpr state table}!";
         compileExpr state (UNSAFE_IDX table key));
