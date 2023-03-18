@@ -1,17 +1,18 @@
 { flake, lib }:
 let
-inherit (flake.utils) compileExpr compileStmt;
-inherit (flake.keywords) RAW PROP APPLY CALL MCALL SET OP2 AND ADD UNM FORIN RETURN DEFUN DEFUN_VAR IF ELSE IDX LET LETREC MACRO LT SUB;
-nvim = flake.neovim {};
-lua = flake.lua {};
-defaultState = { moduleName = "m"; scope = 1; };
-chk = { stmt ? null, expr ? null, raw }:
-  let result = if stmt != null then compileStmt defaultState stmt else compileExpr defaultState expr;
-  in lib.assertMsg (result == raw) "Expected ${raw}, found ${result}";
-eq = a: b: lib.assertMsg (a == b) "Expected ${builtins.toJSON b}, found ${builtins.toJSON a}";
-inherit (nvim.keywords) REQLET;
+  inherit (flake.utils) compileExpr compileStmt;
+  inherit (flake.keywords) RAW PROP APPLY CALL MCALL SET OP2 AND ADD UNM FORIN RETURN DEFUN DEFUN_VAR IF ELSE IDX LET LETREC MACRO LT SUB;
+  nvim = flake.neovim { };
+  lua = flake.lua { };
+  defaultState = { moduleName = "m"; scope = 1; };
+  chk = { stmt ? null, expr ? null, raw }:
+    let result = if stmt != null then compileStmt defaultState stmt else compileExpr defaultState expr;
+    in lib.assertMsg (result == raw) "Expected ${raw}, found ${result}";
+  eq = a: b: lib.assertMsg (a == b) "Expected ${builtins.toJSON b}, found ${builtins.toJSON a}";
+  inherit (nvim.keywords) REQLET;
 in
-assert chk {
+assert chk
+{
   expr = a: (nvim.stdlib.vim.api.nvim_buf_set_option a "omnifunc" "v:lua.vim.lsp.omnifunc");
   raw = ''
     function(m_arg1)
@@ -19,7 +20,8 @@ assert chk {
     end'';
 };
 assert !(builtins.tryEval (compileStmt defaultState (nvim.stdlib.table.remove 1))).success;
-assert chk {
+assert chk
+{
   expr = nvim.stdlib.vim.api.nvim_create_autocmd "test" {
     group = 0;
     callback = { buf, ... }:
@@ -38,45 +40,54 @@ assert chk {
       group = 0;
     })'';
 };
-assert chk {
+assert chk
+{
   stmt = FORIN (RAW "test") (k: (v: CALL (RAW "print") k v));
   raw = ''
     for m_var1,m_var2 in test do
       print(m_var1, m_var2)
     end'';
 };
-assert chk {
+assert chk
+{
   expr = test: { test2, test3 }: (RETURN (ADD test test2 (UNM test3)));
   raw = ''
     function(m_arg1, m_arg2)
       return m_arg1 + m_arg2.test2 + -m_arg2.test3
     end'';
 };
-assert chk {
+assert chk
+{
   expr = RAW "test";
   raw = "test";
 };
-assert chk {
+assert chk
+{
   expr = PROP (RAW "test") "prop";
   raw = "test.prop";
 };
-assert chk {
+assert chk
+{
   expr = IDX (RAW "test") "prop";
   raw = "test[\"prop\"]";
 };
-assert chk {
+assert chk
+{
   expr = APPLY ADD [ 0 1 2 3 ];
   raw = "0 + 1 + 2 + 3";
 };
-assert chk {
+assert chk
+{
   expr = AND true false (OP2 "==" false true);
   raw = "true and false and (false == true)";
 };
-assert chk {
+assert chk
+{
   expr = CALL (RAW "test");
   raw = "test()";
 };
-assert chk {
+assert chk
+{
   expr = CALL (RAW "test") [ 5 ] { test = 5; } 5 "5";
   raw = ''
     test({
@@ -85,22 +96,26 @@ assert chk {
       test = 5;
     }, 5, "5")'';
 };
-assert chk {
+assert chk
+{
   expr = MCALL (RAW "test") "method";
   raw = "test:method()";
 };
-assert chk {
+assert chk
+{
   expr = DEFUN (RAW "test");
   raw = ''
     function()
       test
     end'';
 };
-assert chk {
+assert chk
+{
   stmt = SET (RAW "test") 5;
   raw = "test = 5";
 };
-assert chk {
+assert chk
+{
   stmt = IF (RAW "test") 5 (RAW "test2") 6 7;
   raw = ''
     if test then
@@ -111,7 +126,8 @@ assert chk {
       7
     end'';
 };
-assert chk {
+assert chk
+{
   stmt = IF (RAW "test") 5 (RAW "test2") 6 ELSE 7;
   raw = ''
     if test then
@@ -122,14 +138,16 @@ assert chk {
       7
     end'';
 };
-assert chk {
+assert chk
+{
   stmt = IF (AND true false) (CALL (RAW "print") "this shouldn't happen");
   raw = ''
     if true and false then
       print("this shouldn't happen")
     end'';
 };
-assert chk {
+assert chk
+{
   stmt = LET (RAW "test") (RAW "test2") ({ test }: test2: [ test test2 ]);
   raw = ''
     local m_var1 = test
@@ -137,32 +155,37 @@ assert chk {
     m_var1.test
     m_var2'';
 };
-assert chk {
-  stmt = LETREC (test: test2: test2) (test: test2: test) (test: test2: []);
+assert chk
+{
+  stmt = LETREC (test: test2: test2) (test: test2: test) (test: test2: [ ]);
   raw = ''
     local m_var1 = m_var2
     local m_var2 = m_var1
   '';
 };
-assert chk {
+assert chk
+{
   stmt = MACRO true ({ ... }: "this will be lua in 1976\n");
   raw = ''
     this will be lua in 1976
   '';
 };
 assert !(builtins.tryEval (compileStmt defaultState (SET nvim.stdlib.vim.o.colorcolumn 17))).success;
-assert chk {
+assert chk
+{
   stmt = SET nvim.stdlib.vim.o.colorcolumn "17";
   raw = ''vim.o.colorcolumn = "17"'';
 };
-assert chk {
+assert chk
+{
   stmt = REQLET "vim.shared" "vim._editor" (vim-shared: vim-editor: nvim.stdlib.print vim-shared);
   raw = ''
     local m_var1 = require("vim.shared")
     local m_var2 = require("vim._editor")
     print(m_var1)'';
 };
-assert chk {
+assert chk
+{
   expr = { key = { test }: test; };
   raw = ''
     {
@@ -171,42 +194,48 @@ assert chk {
       end;
     }'';
 };
-assert chk {
+assert chk
+{
   expr = lua.stdlib.print 5;
   raw = "print(5)";
 };
-assert chk {
+assert chk
+{
   expr = (lua.keywords.REQ "cjson").encode;
   raw = "require(\"cjson\").encode";
 };
-assert chk {
+assert chk
+{
   stmt = (lua.keywords.REQLET "cjson" (cjson: cjson.encode));
   raw = ''
     local m_var1 = require("cjson")
     m_var1.encode'';
 };
-assert chk {
+assert chk
+{
   stmt = (lua.keywords.REQLET' (lua.stdlib.require "cjson") (lua.stdlib.require "cjson") (cjson: _: cjson.encode));
   raw = ''
     local m_var1 = require("cjson")
     local m_var2 = require("cjson")
     m_var1.encode'';
 };
-assert chk {
+assert chk
+{
   stmt = (lua.keywords.REQLET "cjson" ({ encode, ... }: encode 5));
   raw = ''
     local m_var1 = require("cjson")
     m_var1.encode(5)'';
 };
-assert chk {
+assert chk
+{
   stmt = LETREC
     (fib:
       (n:
         IF (LT n 2)
           (RETURN n)
-        ELSE
+          ELSE
           (RETURN (ADD (CALL fib (SUB n 1)) (CALL fib (SUB n 2))))))
-          (fib: lua.stdlib.print (CALL fib 5));
+    (fib: lua.stdlib.print (CALL fib 5));
   raw = ''
     local m_var1 = function(m_arg2)
       if m_arg2 < 2 then
@@ -217,10 +246,11 @@ assert chk {
     end
     print(m_var1(5))'';
 };
-assert eq (flake.keywords.MERGE {a = 1;} []) {a = 1;};
-assert eq (flake.keywords.MERGE {a = 1;} [1]) {a = 1; __list = [1];};
-assert eq (flake.keywords.MERGE {a = 1; __list = [1];} [2]) {a = 1; __list = [1 2];};
-assert chk {
+assert eq (flake.keywords.MERGE { a = 1; } [ ]) { a = 1; };
+assert eq (flake.keywords.MERGE { a = 1; } [ 1 ]) { a = 1; __list = [ 1 ]; };
+assert eq (flake.keywords.MERGE { a = 1; __list = [ 1 ]; } [ 2 ]) { a = 1; __list = [ 1 2 ]; };
+assert chk
+{
   expr = flake.keywords.MERGE { a = 1; } [ 1 ];
   raw = ''
     {
@@ -228,15 +258,18 @@ assert chk {
       a = 1;
     }'';
 };
-assert chk {
-  expr = {};
+assert chk
+{
+  expr = { };
   raw = "{}";
 };
-assert chk {
-  expr = [];
+assert chk
+{
+  expr = [ ];
   raw = "{}";
 };
-assert chk {
+assert chk
+{
   expr = DEFUN_VAR (a: b: b);
   raw = ''
     function(m_arg1, ...)

@@ -105,9 +105,10 @@ file), and the statements to compile to lua.
   `state` and `vars`. `state` was mentioned above, but `vars` is a list
   of attrsets with `name` and `value`. `name` is the variable name,
   `value` is whatever user passed. The function must return
-  `{code, expr}` for each binding, where `code` is the compiled code
-  which the variable will be set to, and `expr` is whatever the user
-  will receive in their callback.
+  `{code, expr, local}` for each binding, where `code` is the compiled
+  code which the variable will be set to, `expr` is whatever the
+  user will receive in their callback, and `local` is whether the
+  variable has to be local.
 - `state` currently has `moduleName` - a unique identifier to prefix
   your variables with, and `scope` - the amount of variables currently
   in scope. Whenever there are multiple statements in a block, a unique
@@ -134,15 +135,15 @@ are optional). It exposes two modules - `stdlib` and `keywords`.
 `stdlib` contains the default functions (such as `print` and `require`),
 and `keywords` provides `REQ` (a version of `stdlib.require` that also
 autogenerates bindings) and `REQLET` (a version of `LET` for requiring
-modules while preserving type info), as well as `REQLET'` while gets
-type info from running an expression in a fresh Lua interpreter (so you
-can e.g. get type info of complex modules that involve metatables or
-whatever).
+modules while preserving type info), as well as `REQ'` and `REQLET'`
+which gets type info from running an expression in a fresh Lua
+interpreter (so you can e.g. get type info of complex modules that
+involve metatables or whatever).
 
 Not that this means you don't have to do `CALL print a b` like I wrote
 above, just `print a b` is enough! However, if a function has zero
 arguments, or if you want to call a table, you will still have to use
-`CALL`.
+`CALL` (or even `UNSAFE_CALL`).
 
 The bindings are type-aware and will not let you call a function with a
 wrong argument count or set a Vim option to a wrong type (or any
