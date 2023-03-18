@@ -74,7 +74,7 @@ file), and the statements to compile to lua.
 - `IDX` - dynamically get a table's value (the `[]` operator)
 - `UNSAFE_IDX` - same, but don't throw an error if it isn't a table.
 - `LET` - create a local variable and call a callback with it.
-  Example: `LET 1 2 3 (one: two: three: CALL print (ADD 1 2))`
+  Example: `LET 1 2 3 (one: two: three: CALL print (ADD one two))`
 - `LETREC`: same, but instead of expressions you provide functions that
   take the variables and generate the expressions. Example: the fifth
   fibonacci number:
