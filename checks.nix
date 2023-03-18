@@ -18,6 +18,7 @@ assert chk {
       vim.api.nvim_buf_set_option(m_arg1, "omnifunc", "v:lua.vim.lsp.omnifunc")
     end'';
 };
+assert !(builtins.tryEval (compileStmt defaultState (nvim.stdlib.table.remove 1))).success;
 assert chk {
   expr = nvim.stdlib.vim.api.nvim_create_autocmd "test" {
     group = 0;

@@ -1,7 +1,11 @@
 { pkgs, lib, ... }:
 let
+  catLines = builtins.concatStringsSep "\n";
+  catComma = builtins.concatStringsSep ",";
+  catComma' = builtins.concatStringsSep ", ";
+
   # add a single ident level to code
-  identLines = lines: builtins.concatStringsSep "\n" (map (x: "  ${x}") lines);
+  identLines = lines: catLines (map (x: "  ${x}") lines);
   ident = code: identLines (lib.splitString "\n" code);
 
   luaType = val:
@@ -81,7 +85,7 @@ let
           res = if var then ((applyVars argc prefix scope func).result (keywords.RAW "arg")) else res'.result;
           header = if id == "" then "function" else "local function ${id}";
         in ''
-          ${header}(${builtins.concatStringsSep ", " (
+          ${header}(${catComma' (
             builtins.genList (n: "${varName prefix (scope + n)}") argc
             ++ (lib.optional var "...")
           )})
@@ -98,15 +102,15 @@ let
         else if builtins.isFunction expr then (compileFunc state { id = ""; var = false; } expr)
         else if builtins.isList expr then (if expr == [] then "{}" else ''
           {
-          ${ident (builtins.concatStringsSep "\n" (map (x: (compileExpr state x) + ";" ) expr))}
+          ${ident (catLines (map (x: (compileExpr state x) + ";" ) expr))}
           }'')
         else if !(expr?__kind) then
         let
           lists = notlua.keywords.LIST_PART expr; attrs = notlua.keywords.ATTR_PART expr;
         in
           (if lists == [] && attrs == {} then "{}" else "{"
-          + (if lists == [] then "" else "\n" + (ident (builtins.concatStringsSep "\n" (map (x: (compileExpr state x) + ";" ) lists))))
-          + (if attrs == {} then "" else "\n" + (ident (builtins.concatStringsSep "\n" (lib.mapAttrsToList (k: v: "${wrapKey state k} = ${compileExpr state v};") attrs))))
+          + (if lists == [] then "" else "\n" + (ident (catLines (map (x: (compileExpr state x) + ";" ) lists))))
+          + (if attrs == {} then "" else "\n" + (ident (catLines (lib.mapAttrsToList (k: v: "${wrapKey state k} = ${compileExpr state v};") attrs))))
           + "\n}")
         else if expr.__kind == "raw" then
           "${expr._name}"
@@ -117,7 +121,7 @@ let
 
       compileStmt = state@{ moduleName, scope, ... }: stmt: (
         if builtins.isList stmt then
-          builtins.concatStringsSep "\n" (lib.imap0 (i: compileStmt (pushName i state)) stmt)
+          catLines (lib.imap0 (i: compileStmt (pushName i state)) stmt)
         else if builtins.isAttrs stmt && (stmt?__kind) && stmt.__kind == "customStmt" then
           stmt.__callback (stmt // { self = stmt; inherit state; })
         else if builtins.isAttrs stmt && (stmt?__kind) && stmt.__kind == "rawStmt" then
@@ -183,7 +187,7 @@ let
         "${wrapExpr (compileExpr state expr)}.${name}");
 
       # Apply a list of arguments to a function/operator
-      APPLY = builtins.foldl' (a: b: a b);
+      APPLY = builtins.foldl' lib.id;
 
       # Call something
       # Useful if you need to call a zero argument function, or if you need to handle some weird metatable stuff
@@ -191,23 +195,25 @@ let
       # expr -> arg1 -> ... -> argN -> expr
       CALL = func: EMACRO' ({ args, state, ... }:
         assert lib.assertMsg
-          ((!(func?_minArity) || (builtins.length args) >= func._minArity) && (!(func?_maxArity) || (builtins.length args) <= func._maxArity))
+          ((!(func?_minArity) || (builtins.length args) >= func._minArity)
+          &&
+          (!(func?_maxArity) || (builtins.length args) <= func._maxArity))
           "error: wrong function arity for ${compileExpr state func}! expected at least ${builtins.toString func._minArity}; found ${builtins.toString (builtins.length args)}";
         compileExpr state (APPLY (UNSAFE_CALL func) args)
       );
       UNSAFE_CALL = func: EMACRO' ({ args, state, ... }:
-        "${wrapExpr (compileExpr state func)}(${builtins.concatStringsSep ", " (map (compileExpr state) args)})"
+        "${wrapExpr (compileExpr state func)}(${catComma' (map (compileExpr state) args)})"
       );
 
       # Call a method
       # corresponding lua code: someTable:someFunc()
       # expr -> identifier -> arg1 -> ... -> argN -> expr
       MCALL = val: name: EMACRO' ({ args, state, ... }:
-          "${wrapExpr (compileExpr state val)}:${name}(${builtins.concatStringsSep ", " (map (compileExpr state) args)})");
+          "${wrapExpr (compileExpr state val)}:${name}(${catComma' (map (compileExpr state) args)})");
       # Call a property
       # corresponding lua code: someTable.someFunc()
       PCALL = val: name: EMACRO' ({ args, state, ... }:
-          "${wrapExpr (compileExpr state val)}.${name}(${builtins.concatStringsSep ", " (map (compileExpr state) args)})");
+          "${wrapExpr (compileExpr state val)}.${name}(${catComma' (map (compileExpr state) args)})");
 
       # corresponding lua code: a = b
       # expr -> expr -> stmt
@@ -220,7 +226,7 @@ let
         let
           target = builtins.head args;
           vals = builtins.tail args;
-        in "${compileExpr state target} = ${builtins.concatStringsSep ", " (map (compileExpr state) vals)}") expr val;
+        in "${compileExpr state target} = ${catComma' (map (compileExpr state) vals)}") expr val;
 
       # opName -> expr -> expr
       OP1 = op: expr: EMACRO ({ state, ...}:
@@ -264,7 +270,7 @@ let
           argc' = if argc != null then argc else res.argc;
           varNames = builtins.genList (n: "${varName prefix (state.scope + n)}") argc';
         in ''
-          for ${builtins.concatStringsSep "," varNames} in ${compileExpr state expr} do
+          for ${catComma varNames} in ${compileExpr state expr} do
           ${ident (compileStmt (pushScope argc state) res.result)}
           end'');
 
@@ -281,7 +287,7 @@ let
           prefix = "${state.moduleName}_var";
           name = varName prefix state.scope;
         in ''
-          for ${name} = ${builtins.concatStringsSep "," vars} do
+          for ${name} = ${catComma vars} do
           ${ident (compileStmt (pushScope1 state) (body (RAW name)))}
           end''
       ) arg1 arg2 arg3;
@@ -303,7 +309,7 @@ let
       # expr -> stmt
       RETURN = SMACRO' ({ args, state, ... }:
         if args == [] then "return" 
-        else "return ${builtins.concatStringsSep ", " (map (compileExpr state) args)}");
+        else "return ${catComma' (map (compileExpr state) args)}");
 
       BREAK = RAW' "break";
 
@@ -362,10 +368,10 @@ let
       # Corresponding lua code: local ... = ...
       # expr1 -> ... -> exprN -> (expr1 -> ... -> exprN -> stmt) -> stmt
       LET = LMACRO ({ state, vars, ...}:
-      map ({ name, value, ... }: {
-        code = compileExpr state value;
-        expr = RAW name;
-      }) vars);
+        map ({ name, value, ... }: {
+          code = compileExpr state value;
+          expr = RAW name;
+        }) vars);
 
       # Creates variables and passes them to the function as well as variable binding code
       # Corresponding lua code: local ... = ...
@@ -423,7 +429,7 @@ let
             vars = (lib.zipListsWith (name: value: { inherit name value; }) names vals);
           };
         in ''
-          ${builtins.concatStringsSep "\n" (lib.zipListsWith (key: val:
+          ${catLines (lib.zipListsWith (key: val:
             "local ${key} = ${val.code}"
           ) names values)}
           ${compileStmt (pushScope (builtins.length vals) state) (APPLY (applyRawVar func) (map (x: x.expr) values))}''
