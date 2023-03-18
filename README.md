@@ -84,8 +84,8 @@ file), and the statements to compile to lua.
         IF (LT n 2)
           (RETURN n)
         ELSE
-          (RETURN (ADD (CALL fib (SUB n 1)) (CALL fib (SUB n 2))))))
-    (fib: CALL print (CALL fib 5))
+          (RETURN (ADD (fib (SUB n 1)) (fib (SUB n 2))))))
+    (fib: CALL print (fib 5))
   ```
 - `MERGE`: merge two table-like values in Nix (can be lists or
   attrsets). If you do that, use `ATTR_PART` to get only the attrs of a
@@ -134,11 +134,9 @@ plugins, extraLuaPackages }` and `notlua.lua { lua }` (all attributes
 are optional). It exposes two modules - `stdlib` and `keywords`.
 `stdlib` contains the default functions (such as `print` and `require`),
 and `keywords` provides `REQ` (a version of `stdlib.require` that also
-autogenerates bindings) and `REQLET` (a version of `LET` for requiring
-modules while preserving type info), as well as `REQ'` and `REQLET'`
-which gets type info from running an expression in a fresh Lua
-interpreter (so you can e.g. get type info of complex modules that
-involve metatables or whatever).
+autogenerates bindings) and `REQ'` (same, but it executes not just
+requires, but arbitrary code, which can generate wrong bindings if you
+use it the wrong way, be careful).
 
 Not that this means you don't have to do `CALL print a b` like I wrote
 above, just `print a b` is enough! However, if a function has zero
@@ -149,4 +147,10 @@ The bindings are type-aware and will not let you call a function with a
 wrong argument count or set a Vim option to a wrong type (or any
 other module's value, for that matter). That is, unless you use the
 unsafe versions of the methods.
+
+
+## License
+
+GPL 3 or later - you're free to use this in FOSS projects, or in
+projects which you use privately.
 

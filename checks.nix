@@ -9,8 +9,9 @@ let
     let result = if stmt != null then compileStmt defaultState stmt else compileExpr defaultState expr;
     in lib.assertMsg (result == raw) "Expected ${raw}, found ${result}";
   eq = a: b: lib.assertMsg (a == b) "Expected ${builtins.toJSON b}, found ${builtins.toJSON a}";
-  inherit (nvim.keywords) REQLET;
+  inherit (nvim.keywords) REQ;
 in
+assert !(builtins.tryEval (compileStmt defaultState (nvim.stdlib.table.remove 1 2 3))).success;
 assert chk
 {
   expr = a: (nvim.stdlib.vim.api.nvim_buf_set_option a "omnifunc" "v:lua.vim.lsp.omnifunc");
@@ -178,7 +179,7 @@ assert chk
 };
 assert chk
 {
-  stmt = REQLET "vim.shared" "vim._editor" (vim-shared: vim-editor: nvim.stdlib.print vim-shared);
+  stmt = LET (REQ "vim.shared") (REQ "vim._editor") (vim-shared: vim-editor: nvim.stdlib.print vim-shared);
   raw = ''
     local m_var1 = require("vim.shared")
     local m_var2 = require("vim._editor")
@@ -206,14 +207,14 @@ assert chk
 };
 assert chk
 {
-  stmt = (lua.keywords.REQLET "cjson" (cjson: cjson.encode));
+  stmt = LET (lua.keywords.REQ "cjson") (cjson: cjson.encode);
   raw = ''
     local m_var1 = require("cjson")
     m_var1.encode'';
 };
 assert chk
 {
-  stmt = (lua.keywords.REQLET' (lua.stdlib.require "cjson") (lua.stdlib.require "cjson") (cjson: _: cjson.encode));
+  stmt = LET (lua.keywords.REQ' (lua.stdlib.require "cjson")) (lua.keywords.REQ' (lua.stdlib.require "cjson")) (cjson: _: cjson.encode);
   raw = ''
     local m_var1 = require("cjson")
     local m_var2 = require("cjson")
@@ -221,7 +222,7 @@ assert chk
 };
 assert chk
 {
-  stmt = (lua.keywords.REQLET "cjson" ({ encode, ... }: encode 5));
+  stmt = (LET (lua.keywords.REQ "cjson") ({ encode, ... }: encode 5));
   raw = ''
     local m_var1 = require("cjson")
     m_var1.encode(5)'';
@@ -234,8 +235,8 @@ assert chk
         IF (LT n 2)
           (RETURN n)
           ELSE
-          (RETURN (ADD (CALL fib (SUB n 1)) (CALL fib (SUB n 2))))))
-    (fib: lua.stdlib.print (CALL fib 5));
+          (RETURN (ADD (fib (SUB n 1)) (fib (SUB n 2))))))
+    (fib: lua.stdlib.print (fib 5));
   raw = ''
     local m_var1 = function(m_arg2)
       if m_arg2 < 2 then

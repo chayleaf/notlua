@@ -8,22 +8,36 @@ let
   identLines = lines: catLines (map (x: "  ${x}") lines);
   ident = code: identLines (lib.splitString "\n" code);
 
+  updateNames = new_name: attrs:
+    if attrs?_name then
+      lib.mapAttrsRecursive (path: value: if lib.last path == "_name" then new_name + (lib.removePrefix attrs._name value) else value) attrs
+    else
+      attrs;
+
+  changeName = val: name:
+    let type = luaType val; in if type == null || !(type?_type) then notlua.keywords.RAW name
+    else if type._type == "function" then type // { __functor = self: self // (notlua.keywords.CALL self); } // (notlua.keywords.RAW name)
+    else if type._type == "table" then (updateNames name val) // (notlua.keywords.RAW name)
+    else type // (notlua.keywords.RAW name);
+
   luaType = val:
-    if builtins.isAttrs val && val?__kind then
-      (
-        if val?_type then val._type
-        # can't know the type of arbitrary expressions!
-        else null
-      )
-    else if builtins.isList val || builtins.isAttrs val then "table"
-    else if builtins.isPath val || builtins.isString val then "string"
-    else if builtins.isInt val || builtins.isFloat val then "number"
-    else if builtins.isNull val then "nil"
-    else if builtins.isFunction val then "function"
-    else if builtins.isBool val then "boolean"
+    if builtins.isAttrs val && val?_type then lib.filterAttrs (k: v: k == "_type" || k == "_minArity" || k == "_maxArity") val
+    else if builtins.isAttrs val && val?__kind then null
+    else if builtins.isList val || builtins.isAttrs val then { _type = "table"; }
+    else if builtins.isPath val || builtins.isString val then { _type = "string"; }
+    else if builtins.isInt val || builtins.isFloat val then { _type = "number"; }
+    else if builtins.isNull val then { _type = "nil"; }
+    else if builtins.isFunction val then { _type = "function"; }
+    else if builtins.isBool val then { _type = "boolean"; }
     else null;
 
-  checkType = type1: type2: type1 == null || type2 == null || type1 == type2;
+  printType = val:
+    let type = luaType val; in if type == null || !(builtins.isAttrs type) || !(type?_type) then null else type._type;
+
+  checkType = type1: type2: if type1 == null || type2 == null then true else
+  (builtins.all
+    (x: builtins.length x < 2 || builtins.any (x: x == null) x || builtins.elemAt x 0 == builtins.elemAt x 1)
+    (lib.attrValues (lib.zipAttrs [ type1 type2 ])));
 
   # The following functions may take state: moduleName and scope
   # scope is how many variables are currently in scope
@@ -139,18 +153,18 @@ let
     };
 
     # "type definitions"
-    # output: an attrset with stdlib and keywords (keywords contains REQ, REQ', REQLET, REQLET')
+    # output: an attrset with stdlib and keywords (keywords contains REQ, REQ')
     neovim = attrs@{ neovim-unwrapped ? null, plugins ? [ ], extraLuaPackages ? (_: [ ]) }:
       pkgs.callPackage ./stdlib/nvim.nix (attrs // {
         inherit plugins extraLuaPackages;
         inherit (keywords) CALL LMACRO;
-        inherit (utils) compileExpr;
+        inherit (utils) compileExpr wrapExpr;
       });
 
     lua = attrs@{ lua ? null }:
       pkgs.callPackage ./stdlib/lua.nix (attrs // {
         inherit (keywords) CALL LMACRO;
-        inherit (utils) compileExpr;
+        inherit (utils) compileExpr wrapExpr;
       });
 
     keywords = let inherit (utils) compileExpr compileFunc compileStmt; in rec {
@@ -187,7 +201,7 @@ let
       # Corresponding lua code: table.property
       # expr -> string -> expr
       PROP = expr: name: EMACRO ({ state, ... }:
-        assert lib.assertMsg (checkType (luaType expr) "table") "Unable to get property ${name} of a ${luaType expr}!";
+        assert lib.assertMsg (checkType (luaType expr) (luaType { })) "Unable to get property ${name} of a ${printType expr}!";
         compileExpr state (UNSAFE_PROP expr name));
       UNSAFE_PROP = expr: name: EMACRO ({ state, ... }:
         "${wrapExpr (compileExpr state expr)}.${name}");
@@ -227,7 +241,7 @@ let
         ({ args, state, ... }:
           assert lib.assertMsg
             (checkType (luaType expr) (luaType val))
-            "error: setting ${compileExpr state expr} to wrong type. It should be ${luaType expr} but is ${luaType val}";
+            "error: setting ${compileExpr state expr} to wrong type. It should be ${printType expr} but is ${printType val}";
           compileStmt state (APPLY UNSAFE_SET args))
         expr
         val;
@@ -385,8 +399,8 @@ let
       IDX = table: key: EMACRO ({ state, ... }:
         assert
         lib.assertMsg
-          (checkType (luaType table) "table")
-          "Unable to get key ${compileExpr state key} of a ${luaType table} ${compileExpr state table}!";
+          (checkType (luaType table) (luaType { }))
+          "Unable to get key ${compileExpr state key} of a ${printType table} ${compileExpr state table}!";
         compileExpr state (UNSAFE_IDX table key));
 
       UNSAFE_IDX = table: key: EMACRO ({ state, ... }:
@@ -399,7 +413,7 @@ let
         map
           ({ name, value, ... }: {
             code = compileExpr state value;
-            expr = RAW name;
+            expr = changeName value name;
           })
           vars);
 
@@ -411,8 +425,8 @@ let
           ({ name, value }: {
             code = compileExpr
               (pushScope (builtins.length vars) state)
-              (APPLY (applyRawVar value) (map (var: RAW var.name) vars));
-            expr = RAW name;
+              (APPLY (applyRawVar value) (map (var: (changeName var.value var.name)) vars));
+            expr = changeName value name;
           })
           vars);
 
@@ -427,8 +441,7 @@ let
       # MACRO variant that passes a {args} argument
       MACRO' = stmt: callback: (MACRO stmt callback) // {
         args = [ ];
-        __functor = self: arg: {
-          inherit (self) __kind __functor __callback;
+        __functor = self: arg: self // {
           args = self.args ++ [ arg ];
         };
       };

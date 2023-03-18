@@ -5,6 +5,7 @@
 , CALL
 , LMACRO
 , compileExpr
+, wrapExpr
 
 , lua
 , ...
@@ -13,7 +14,7 @@
 # TODO: bfs instead of dfs in var dumps
 
 let
-  common = import ./common.nix { inherit lib CALL LMACRO compileExpr getExprTypeDefs typeDefs; };
+  common = import ./common.nix { inherit lib CALL LMACRO compileExpr wrapExpr getExprTypeDefs typeDefs; };
   lua' = lua.withPackages (p: [ p.cjson ]);
 
   typeDefs = builtins.fromJSON (builtins.readFile (stdenvNoCC.mkDerivation {
@@ -45,6 +46,6 @@ in
 {
   inherit (common) stdlib;
   keywords = {
-    inherit (common) REQ REQ' REQLET REQLET';
+    inherit (common) REQ REQ';
   };
 }

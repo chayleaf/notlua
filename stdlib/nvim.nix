@@ -7,6 +7,7 @@
 , CALL
 , LMACRO
 , compileExpr
+, wrapExpr
 
 , neovim-unwrapped
 , plugins
@@ -17,7 +18,7 @@
 # TODO: bfs instead of dfs in var dumps
 
 let
-  common = import ./common.nix { inherit lib CALL LMACRO compileExpr getExprTypeDefs typeDefs; };
+  common = import ./common.nix { inherit lib CALL LMACRO compileExpr wrapExpr getExprTypeDefs typeDefs; };
 
   evalAndOptions = lua: lua.buildLuaPackage {
     pname = "neovim-options-lua-and-eval-lua";
@@ -75,6 +76,6 @@ in
 {
   inherit (common) stdlib;
   keywords = {
-    inherit (common) REQ REQ' REQLET REQLET';
+    inherit (common) REQ REQ';
   };
 }

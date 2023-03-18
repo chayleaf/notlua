@@ -33,7 +33,7 @@ local function dump2(t, path, res)
                     _minArity = info.nparams
                 }
                 if not info.isvararg then
-                    res[k]["maxArity"] = info.nparams
+                    res[k]["_maxArity"] = info.nparams
                 end
             else
                 res[k] = {
