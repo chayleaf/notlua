@@ -14,7 +14,9 @@ let
       (if v.__kind == "rec" then
         lib.attrByPath (lib.splitString "." v.path) null self
       else if v.__kind == "raw" && v._type == "function" then
-        v' // { __functor = self: self // (keywords.CALL self); }
+        v' // {
+          __functor = self: self // (keywords.CALL self);
+        }
       else v'
       ) else if builtins.isAttrs v then v'
     else if prefix != "" && k == "_name" then

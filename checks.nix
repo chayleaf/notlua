@@ -45,16 +45,16 @@ assert chk
 {
   stmt = FORIN (RAW "test") (k: (v: CALL (RAW "print") k v));
   raw = ''
-    for m_var1,m_var2 in test do
-      print(m_var1, m_var2)
+    for m_for1,m_for2 in test do
+      print(m_for1, m_for2)
     end'';
 };
 assert chk
 {
-  expr = test: { test2, test3 }: (RETURN (ADD test test2 (UNM test3)));
+  expr = test: { test2, test3 }: (RETURN (ADD test test2 (UNM test3)) 5);
   raw = ''
     function(m_arg1, m_arg2)
-      return m_arg1 + m_arg2.test2 + -m_arg2.test3
+      return m_arg1 + m_arg2.test2 + -m_arg2.test3, 5
     end'';
 };
 assert chk
