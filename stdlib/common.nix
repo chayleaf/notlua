@@ -28,53 +28,55 @@ let
 
   inherit (keywords) LET LETREC RAW CALL IF EQ NE IDX NOT AND SET ELSE PROP CAT FORIN OR;
 
-  initTable = res: k: IF (NOT (IDX res k)) (SET (IDX res k) { });
-  forceInitTable = res: k: SET (IDX res k) { };
-  setTable = res: k: v: lib.mapAttrsToList (k1: v1: SET (PROP (IDX res k) k1) v1) v;
+  initTable = table: IF (NOT table) (SET table { });
+  setTable = table: lib.mapAttrsToList (k1: v1: SET (PROP table k1) v1);
+  initSetTable = table: v: lib.toList (SET table { }) ++ (setTable table v);
 
   dump1 =
     let
       type = CALL (RAW "type");
       debug-getinfo = CALL (RAW "debug.getinfo");
     in
-    (seen: dump1: dump2: k: v: path: res: IF
-      (EQ (type v) "table")
-      (IF (IDX seen v)
-        (IF (AND (NOT (IDX res k)) (NE (IDX seen v) true)) [
-          (forceInitTable res k)
-          (setTable res k {
-            __kind = "rec";
-            path = IDX seen v;
+    (seen: dump1: dump2: k: v: path: res:
+      let
+        seen' = IDX seen v;
+        __kind = "raw";
+        _name = CAT path k;
+        res' = IDX res k;
+      in
+      IF
+        (EQ (type v) "table")
+        (IF seen'
+          (IF
+            (AND (NOT res') (NE seen' true))
+            (initSetTable res' {
+              __kind = "rec";
+              path = seen';
+            }))
+          ELSE [
+          (initTable res')
+          (dump2 v (CAT path k) res')
+          (setTable res' {
+            inherit __kind _name;
+            _type = "table";
           })
         ])
-        ELSE [
-        (initTable res k)
-        (dump2 v (CAT path k) (IDX res k))
-        (setTable res k {
-          __kind = "raw";
-          _type = "table";
-          _name = CAT path k;
-        })
-      ])
-      (EQ (type v) "function")
-      (LET (debug-getinfo v) (info: [
-        (forceInitTable res k)
-        (setTable res k {
-          __kind = "raw";
-          _type = "function";
-          _name = CAT path k;
-          _minArity = PROP info "nparams";
-        })
-        (IF (NOT (PROP info "isvararg")) (SET (PROP (IDX res k) "_maxArity") (PROP info "nparams")))
-      ]))
-      ELSE [
-      (forceInitTable res k)
-      (setTable res k {
-        __kind = "raw";
-        _type = type v;
-        _name = CAT path k;
-      })
-    ]);
+        (EQ (type v) "function")
+        (LET (debug-getinfo v) ({ nparams, isvararg, ... }: [
+          (initSetTable res' {
+            inherit __kind _name;
+            _type = "function";
+            _minArity = nparams;
+          })
+          (IF (NOT isvararg) (setTable res' {
+            _maxArity = nparams;
+          }))
+        ]))
+        ELSE
+        (initSetTable res' {
+          inherit __kind _name;
+          _type = type v;
+        }));
 
   dump2 =
     let
@@ -89,24 +91,22 @@ let
         (IF (OR (NE path "") (NE k' "package")) (dump1 k' v path res))))
     ]);
 
+  dump12 = seen: LETREC (dump1 seen) (dump2 seen);
+
   dumpLuaExpr =
     let
       require = CALL (RAW "require");
       print = CALL (RAW "print");
     in
-    expr: LET { } { } (require "cjson") (seen: result: cjson:
-      (LETREC
-        (dump1 seen)
-        (dump2 seen)
-        (dump1: dump2: [
-          (dump1 "" expr "" result)
-          (print (CALL (PROP cjson "encode") (IDX result "")))
-        ])
-      ));
+    expr: LET { } { } (require "cjson") (seen: result: { encode, ... }:
+      (dump12 seen (dump1: dump2: [
+        (dump1 "" expr "" result)
+        (print (CALL encode (IDX result "")))
+      ])));
 in
 {
   REQ = name: req "require(\"${name}\")";
   REQ' = code: req (utils.compileExpr { moduleName = "__req"; scope = 1; } code);
   dumpLuaExpr = expr: utils.compile "main" (dumpLuaExpr expr);
-  inherit stdlib dump1 dump2 initTable forceInitTable setTable;
+  inherit stdlib dump12 initSetTable;
 }

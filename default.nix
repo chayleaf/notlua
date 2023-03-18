@@ -160,22 +160,22 @@ let
 
     # "type definitions"
     # output: an attrset with stdlib and keywords (keywords contains REQ, REQ')
-    neovim = attrs@{ neovim-unwrapped ? null, plugins ? [ ], extraLuaPackages ? (_: [ ]) }:
+    neovim = attrs@{ neovim-unwrapped ? null, plugins ? [ ], extraLuaPackages ? (_: [ ]), ... }:
       pkgs.callPackage ./stdlib/nvim.nix (attrs // {
         inherit plugins extraLuaPackages;
         inherit keywords utils;
       });
 
-    lua = attrs@{ lua ? null }:
+    lua = attrs@{ lua ? null, ... }:
       pkgs.callPackage ./stdlib/lua.nix (attrs // {
         inherit keywords utils;
       });
 
     keywords = let inherit (utils) compileExpr compileFunc compileStmt; in rec {
       # pass some raw code to lua directly
-      # string -> expr&stmt
+      # string -> expr
       RAW = name: { __kind = "raw"; _name = name; };
-      # raw statement
+      # string -> stmt
       RAW' = name: { __kind = "rawStmt"; _name = name; };
 
       LIST_PART = list:
@@ -470,7 +470,7 @@ let
           ({ name, value }: {
             code = compileExpr
               (pushScope (builtins.length vars) state)
-              (APPLY (applyRawVar value) (map (var: (changeName var.value var.name)) vars));
+              (APPLY (applyRawVar value) (map (var: changeName var.value var.name) vars));
             expr = changeName value name;
             predef = true;
           })
@@ -531,7 +531,12 @@ let
             ${catLines (map ({ key, val }:
               "${if (!(val?local) || val.local) && ((!(val?predef)) || (!val.predef)) then "local " else ""}${key} = ${val.code}"
             ) kvs)}
-            ${compileStmt (pushScope (builtins.length vals) state) (APPLY (applyRawVar func) (map (x: x.expr) values))}''
+            ${
+              compileStmt
+                (pushScope (builtins.length vals) state)
+                (builtins.foldl' (func: applyRawVar func) func (map (x: x.expr) values))
+                # (APPLY (applyRawVar func) (map (x: x.expr) values))
+            }''
         )
         arg1
         arg2;
