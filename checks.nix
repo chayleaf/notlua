@@ -160,8 +160,10 @@ assert chk
 {
   stmt = LETREC (test: test2: test2) (test: test2: test) (test: test2: [ ]);
   raw = ''
-    local m_var1 = m_var2
-    local m_var2 = m_var1
+    local m_var1
+    local m_var2
+    m_var1 = m_var2
+    m_var2 = m_var1
   '';
 };
 assert chk
@@ -238,7 +240,8 @@ assert chk
           (RETURN (ADD (fib (SUB n 1)) (fib (SUB n 2))))))
     (fib: lua.stdlib.print (fib 5));
   raw = ''
-    local m_var1 = function(m_arg2)
+    local m_var1
+    m_var1 = function(m_arg2)
       if m_arg2 < 2 then
         return m_arg2
       else

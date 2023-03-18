@@ -285,7 +285,7 @@ let
       # opName -> expr -> expr
       OP1' = type: types: op: expr:
         (OP1 op expr)
-        // { types = types ++ [ null "unknown" ]; }
+        // (if types != null then { types = types ++ [ null "unknown" ]; } else { })
         // (if type != null then { _type = type; } else { });
       OP1 = op: expr: EMACRO ({ state, types ? [ ], ... }:
         assert lib.assertMsg
@@ -297,7 +297,7 @@ let
       # The following operators have the signature
       # expr -> expr
       LEN = OP1' "number" [ "string" "table" ] "#";
-      NOT = OP1 "boolean" [ "boolean" ] "not ";
+      NOT = OP1 "boolean" null "not ";
       UNM = OP1' "number" [ "number" ] "-";
       BITNOT = OP1 "number" [ "number" ] "~";
 
@@ -474,6 +474,7 @@ let
               (pushScope (builtins.length vars) state)
               (APPLY (applyRawVar value) (map (var: (changeName var.value var.name)) vars));
             expr = changeName value name;
+            predef = true;
           })
           vars);
 
@@ -519,11 +520,16 @@ let
               inherit state;
               vars = (lib.zipListsWith (name: value: { inherit name value; }) names vals);
             };
-          in
+            kvs = lib.zipListsWith (key: val: { inherit key val; }) names values;
+            predefVars = builtins.filter ({ key, val }: val?predef && val.predef) kvs;
+            predefs = catLines (map ({ key, val }:
+              if !(val?local) || val.local then "local ${key}" else "${key} = nil"
+            ) predefVars);
+          in (if predefs == "" then "" else (predefs + "\n")) +
           ''
-            ${catLines (lib.zipListsWith (key: val:
-              "${if !(val?local) || val.local then "local " else ""}${key} = ${val.code}"
-            ) names values)}
+            ${catLines (map ({ key, val }:
+              "${if (!(val?local) || val.local) && ((!(val?predef)) || (!val.predef)) then "local " else ""}${key} = ${val.code}"
+            ) kvs)}
             ${compileStmt (pushScope (builtins.length vals) state) (APPLY (applyRawVar func) (map (x: x.expr) values))}''
         )
         arg1
