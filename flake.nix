@@ -7,8 +7,9 @@
     let output = (flake-utils.lib.eachDefaultSystem (system: {
       nixosModules.default = ./default.nix;
     })); in output // {
+      nixosModules.default = ./default.nix;
       checks.x86_64-linux.default = nixpkgs.legacyPackages.x86_64-linux.callPackage ./checks.nix {
-        flake = (nixpkgs.legacyPackages.x86_64-linux.callPackage output.nixosModules."x86_64-linux".default {}).config.notlua;
+        flake = (nixpkgs.legacyPackages.x86_64-linux.callPackage ./default.nix {}).config.notlua;
       };
     };
 }

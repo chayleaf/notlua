@@ -109,7 +109,7 @@ local function dumpo(t, path, opt, res)
                 _type = "table"
             }
             if type(v.abbreviation) == "string" then
-                res[path..v.full_name] = { __kind = "rec", path = path..v.full_name, }
+                res[v.abbreviation] = { __kind = "rec", path = path..v.full_name, }
             end
         elseif opt and v.list then
             -- list

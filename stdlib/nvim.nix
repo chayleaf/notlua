@@ -7,10 +7,11 @@
 , wrapNeovimUnstable
 
 , CALL
-, MACRO
+, LMACRO
 , APPLY
 , LET
 , compileExpr
+, compileStmt
 
 , plugins
 , extraLuaPackages ? (_: [])
@@ -19,7 +20,7 @@
 # TODO: bfs instead of dfs in var dumps
 
 let
-common = callPackage ./common.nix { inherit CALL MACRO APPLY LET compileExpr getReqAttrs stdlib; };
+common = callPackage ./common.nix { inherit CALL LMACRO APPLY LET compileExpr compileStmt getReqAttrs stdlib; };
 inherit (common) update;
 
 stdlib = update stdlib "" data;

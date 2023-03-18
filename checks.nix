@@ -1,13 +1,14 @@
 { flake, lib }:
 let
 inherit (flake.utils) compileExpr compileStmt;
-inherit (flake.keywords) RAW PROP APPLY CALL MCALL SET OP2 AND ADD FORIN RETURN DEFUN IF ELSE ATTR LET LETREC MACRO;
+inherit (flake.keywords) RAW PROP APPLY CALL MCALL SET OP2 AND ADD UNM FORIN RETURN DEFUN DEFUN_VAR IF ELSE IDX LET LETREC MACRO LT SUB;
 nvim = flake.neovim {};
 lua = flake.lua {};
 defaultState = { moduleName = "m"; scope = 1; };
 chk = { stmt ? null, expr ? null, raw }:
   let result = if stmt != null then compileStmt defaultState stmt else compileExpr defaultState expr;
   in lib.assertMsg (result == raw) "Expected ${raw}, found ${result}";
+eq = a: b: lib.assertMsg (a == b) "Expected ${builtins.toJSON b}, found ${builtins.toJSON a}";
 inherit (nvim.keywords) REQLET;
 in
 assert chk {
@@ -44,10 +45,10 @@ assert chk {
     end'';
 };
 assert chk {
-  expr = test: { test2, test3 }: RETURN (ADD test test2 test3);
+  expr = test: { test2, test3 }: (RETURN (ADD test test2 (UNM test3)));
   raw = ''
     function(m_arg1, m_arg2)
-      return m_arg1 + m_arg2.test2 + m_arg2.test3
+      return m_arg1 + m_arg2.test2 + -m_arg2.test3
     end'';
 };
 assert chk {
@@ -59,7 +60,7 @@ assert chk {
   raw = "test.prop";
 };
 assert chk {
-  expr = ATTR (RAW "test") "prop";
+  expr = IDX (RAW "test") "prop";
   raw = "test[\"prop\"]";
 };
 assert chk {
@@ -143,7 +144,7 @@ assert chk {
   '';
 };
 assert chk {
-  stmt = MACRO (state: { inherit state; result = RAW "this will be lua in 1976\n"; });
+  stmt = MACRO true ({ ... }: "this will be lua in 1976\n");
   raw = ''
     this will be lua in 1976
   '';
@@ -189,6 +190,57 @@ assert chk {
     local m_var1 = require("cjson")
     local m_var2 = require("cjson")
     m_var1.encode'';
+};
+assert chk {
+  stmt = (lua.keywords.REQLET "cjson" ({ encode, ... }: encode 5));
+  raw = ''
+    local m_var1 = require("cjson")
+    m_var1.encode(5)'';
+};
+assert chk {
+  stmt = LETREC
+    (fib:
+      (n:
+        IF (LT n 2)
+          (RETURN n)
+        ELSE
+          (RETURN (ADD (CALL fib (SUB n 1)) (CALL fib (SUB n 2))))))
+          (fib: lua.stdlib.print (CALL fib 5));
+  raw = ''
+    local m_var1 = function(m_arg2)
+      if m_arg2 < 2 then
+        return m_arg2
+      else
+        return (m_var1(m_arg2 - 1)) + (m_var1(m_arg2 - 2))
+      end
+    end
+    print(m_var1(5))'';
+};
+assert eq (flake.keywords.MERGE {a = 1;} []) {a = 1;};
+assert eq (flake.keywords.MERGE {a = 1;} [1]) {a = 1; __list = [1];};
+assert eq (flake.keywords.MERGE {a = 1; __list = [1];} [2]) {a = 1; __list = [1 2];};
+assert chk {
+  expr = flake.keywords.MERGE { a = 1; } [ 1 ];
+  raw = ''
+    {
+      1;
+      a = 1;
+    }'';
+};
+assert chk {
+  expr = {};
+  raw = "{}";
+};
+assert chk {
+  expr = [];
+  raw = "{}";
+};
+assert chk {
+  expr = DEFUN_VAR (a: b: b);
+  raw = ''
+    function(m_arg1, ...)
+      arg
+    end'';
 };
 {
   name = "flake-checks";

@@ -4,10 +4,11 @@
 , substituteAll
 
 , CALL
-, MACRO
+, LMACRO
 , APPLY
 , LET
 , compileExpr
+, compileStmt
 
 , lua
 , ... }: 
@@ -15,7 +16,7 @@
 # TODO: bfs instead of dfs in var dumps
 
 let
-common = callPackage ./common.nix { inherit CALL MACRO APPLY LET compileExpr getReqAttrs stdlib; };
+common = callPackage ./common.nix { inherit CALL LMACRO APPLY LET compileExpr compileStmt getReqAttrs stdlib; };
 inherit (common) update;
 lua' = lua.withPackages (p: [ p.cjson ]);
 

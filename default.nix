@@ -4,11 +4,6 @@ let
   identLines = lines: builtins.concatStringsSep "\n" (map (x: "  ${x}") lines);
   ident = code: identLines (lib.splitString "\n" code);
 
-  # list end
-  end = list: builtins.elemAt list (builtins.length list - 1);
-  # pop list end
-  pop = list: lib.take (builtins.length list - 1) list;
-
   luaType = val:
     if builtins.isAttrs val && val?__kind then (
       if val?_type then val._type
@@ -22,14 +17,16 @@ let
     else if builtins.isBool val then "boolean"
     else null;
 
-  # vararg system
+  checkType = type1: type2: type1 == null || type2 == null || type1 == type2;
 
   # The following functions may take state: moduleName and scope
   # scope is how many variables are currently in scope
   # the count is used for generating new variable names
+  # moduleName will additionally get changed based on the branch
 
-  pushScope = n: { moduleName, scope }: { inherit moduleName; scope = scope + n; };
+  pushScope = n: attrs@{ scope, ... }: attrs // { scope = scope + n; };
   pushScope1 = pushScope 1;
+  pushName = suffix: attrs@{ moduleName, ... }: attrs // { moduleName = moduleName + (builtins.toString suffix); };
 
   # wrap an expression in parentheses if necessary
   # probably not the best heuristics, but good enough to make the output readable
@@ -38,135 +35,94 @@ let
 
   # Same, but for table keys
   keySafe = s: (builtins.match "^[a-zA-Z_][_a-zA-Z0-9]*$" s) != null;
-  wrapKey = scope: s: if keySafe s then s else "[${result.utils.compileExpr scope s}]";
+  wrapKey = scope: s: if keySafe s then s else "[${notlua.utils.compileExpr scope s}]";
 
+  # Create a variable name with a prefix and scope
+  varName = prefix: scope: "${prefix}${builtins.toString scope}";
+
+  # Apply variable to a function
+  applyRawVar = func: var:
+    let
+      args = builtins.functionArgs func;
+      raw = if builtins.isAttrs var && var?_name then var._name else builtins.toString var;
+      getKeyRaw = k: notlua.keywords.RAW "${raw}.${k}";
+      getKey = if builtins.isAttrs var then (k: if builtins.hasAttr k var then builtins.getAttr k var else getKeyRaw k) else getKeyRaw;
+      nonraw = if builtins.isString var then (notlua.keywords.RAW var) else var;
+    in
+      if args == {} then func nonraw
+      else func (builtins.mapAttrs (k: v: getKey k) args);
+
+  # This function is mostly useful when you don't know how many variables a user-provided function takes.
+  # It takes variable count (can be null), prefix and scope (prefix should be derived from module name), as
+  # well as the function itself, creates new variables with your prefix and applies them to the function until
+  # it stops being a function (e.g. if it becomes a functor, like vararg functions). It returns an attrset with
+  # the `result` value, which contains the end result of function applcation. If you haven't provided `count`,
+  # it also returns `argc` attr, containing the argument count of the function.
+  applyVars = count: prefix: scope: func: applyVars' scope count prefix scope func 0;
   applyVars' = origScope: count: prefix: let self = (scope: func: argc:
   (
     if count != null && scope == (origScope + count) then { result = func; }
     else if count == null && !(builtins.isFunction func) then { result = func; inherit argc; }
-    else self (scope + 1) (let
-      args = builtins.functionArgs func;
-      name = "${prefix}${builtins.toString scope}"; in
-        if args == {} then func (result.keywords.RAW name)
-        else func (builtins.mapAttrs (k: v: result.keywords.RAW "${name}.${k}") args)) (argc + 1))
+    else self (scope + 1) (applyRawVar func (varName prefix scope)) (argc + 1))
   ); in self;
-  applyVars = count: prefix: scope: func: applyVars' scope count prefix scope func 0;
 
-  result = rec {
+  notlua = rec {
     utils = rec {
-      compileFunc = state@{moduleName, scope}: id: expr:
-      (let
-        res = applyVars null "${moduleName}_arg" scope expr;
-        argc = res.argc;
-        func = res.result;
-        header = if id == "" then "function" else "local function ${id}";
-      in ''
-        ${header}(${builtins.concatStringsSep ", " (builtins.genList (n: "${moduleName}_arg${builtins.toString (scope + n)}") argc)})
-        ${ident (compileStmt (pushScope argc state) func)}
-        end'');
+      inherit applyRawVar applyVars wrapKey wrapExpr varName pushName pushScope checkType luaType ident;
 
-      compileExpr = state: func: (
-        if builtins.isString func then builtins.toJSON func
-        else if builtins.isInt func then builtins.toString func
-        else if builtins.isFloat func then builtins.toString func
-        else if builtins.isBool func then (if func then "true" else "false")
-        else if builtins.isNull func then "nil"
-        else if builtins.isPath func then compileExpr state (builtins.toString func)
-        else if builtins.isFunction func then (compileFunc state "" func)
-        else if builtins.isList func then ''
+      # compile a function. First argument is state, second argument is function name and whether it's vararg,
+      # third is function itself
+      compileFunc = state@{moduleName, scope, ... }: { id, var }: func:
+        (let
+          prefix = "${moduleName}_arg";
+          res' = applyVars null prefix scope func;
+          argc' = res'.argc;
+          argc = if var then argc' - 1 else argc';
+          res = if var then ((applyVars argc prefix scope func).result (keywords.RAW "arg")) else res'.result;
+          header = if id == "" then "function" else "local function ${id}";
+        in ''
+          ${header}(${builtins.concatStringsSep ", " (
+            builtins.genList (n: "${varName prefix (scope + n)}") argc
+            ++ (lib.optional var "...")
+          )})
+          ${ident (compileStmt (pushScope argc state) res)}
+          end'');
+
+      compileExpr = state: expr: (
+        if builtins.isString expr then builtins.toJSON expr
+        else if builtins.isInt expr then builtins.toString expr
+        else if builtins.isFloat expr then builtins.toString expr
+        else if builtins.isBool expr then lib.boolToString expr
+        else if builtins.isNull expr then "nil"
+        else if builtins.isPath expr then compileExpr state (builtins.toString expr)
+        else if builtins.isFunction expr then (compileFunc state { id = ""; var = false; } expr)
+        else if builtins.isList expr then (if expr == [] then "{}" else ''
           {
-          ${ident (builtins.concatStringsSep "\n" (map (x: (compileExpr state x) + ";" ) func))}
-          }''
-        else if builtins.isAttrs func && func?_expr then compileExpr state func._expr
-        else if builtins.isAttrs func && !(func?__kind) then ''
-          {
-          ${ident (builtins.concatStringsSep "\n" (lib.mapAttrsToList (k: v: "${wrapKey state k} = ${compileExpr state v};") func))}
-          }''
-        else if func.__kind == "raw" then
-          "${func._name}"
-        else if func.__kind == "op2" then
-          builtins.concatStringsSep " ${func.op} " (map (x: wrapExpr (compileExpr state x)) func.args)
-        else if func.__kind == "op1" then
-          "${func.op}${wrapExpr (compileExpr state func.expr)}"
-        else if func.__kind == "defun" then
-          (compileFunc state (if func?id then func.id else "") func.func)
-        else if func.__kind == "prop" then
-          assert lib.assertMsg (luaType func.expr == null || luaType func.expr == "table") "Unable to get property ${func.name} of a ${luaType func.expr}!";
-          "${wrapExpr (compileExpr state func.expr)}.${func.name}"
-        else if func.__kind == "call" then
-          let args = func._args; in
-          assert lib.assertMsg
-            ((!(func._func?_minArity) || (builtins.length args) >= func._func._minArity) && (!(func._func?_maxArity) || (builtins.length args) <= func._func._maxArity))
-            "error: wrong function arity for ${compileExpr state func._func}! expected at least ${builtins.toString func._func._minArity}; found ${builtins.toString (builtins.length args)}";
-          "${wrapExpr (compileExpr state func._func)}(${builtins.concatStringsSep ", " (map (compileExpr state) args)})"
-        else if func.__kind == "mcall" then
-          "${wrapExpr (compileExpr state func.val)}:${func.name}(${builtins.concatStringsSep ", " (map (compileExpr state) func.args)})"
-        else if func.__kind == "tableAttr" then
-          assert lib.assertMsg (luaType func.table == null || luaType func.table == "table") "Unable to get table value ${compileExpr state func.key} of a ${luaType func.table} ${compileExpr state func.table}!";
-          "${wrapExpr (compileExpr state func.table)}[${compileExpr state func.key}]"
-          else if func.__kind == "custom" then
-            let res = func.callback state; in compileExpr res.state res.result
-        else assert lib.assertMsg false "Invalid expression kind ${func.__kind}"; null
+          ${ident (builtins.concatStringsSep "\n" (map (x: (compileExpr state x) + ";" ) expr))}
+          }'')
+        else if !(expr?__kind) then
+        let
+          lists = notlua.keywords.LIST_PART expr; attrs = notlua.keywords.ATTR_PART expr;
+        in
+          (if lists == [] && attrs == {} then "{}" else "{"
+          + (if lists == [] then "" else "\n" + (ident (builtins.concatStringsSep "\n" (map (x: (compileExpr state x) + ";" ) lists))))
+          + (if attrs == {} then "" else "\n" + (ident (builtins.concatStringsSep "\n" (lib.mapAttrsToList (k: v: "${wrapKey state k} = ${compileExpr state v};") attrs))))
+          + "\n}")
+        else if expr.__kind == "raw" then
+          "${expr._name}"
+        else if expr.__kind == "custom" then
+          expr.__callback (expr // { self = expr; inherit state; })
+        else builtins.throw "Invalid expression kind ${expr.__kind}"
       );
 
-      compileStmt = state@{moduleName,scope}: func: (
-        if builtins.isList func then builtins.concatStringsSep "\n" (map (compileStmt state) func)
-        else if builtins.isAttrs func && func?_stmt then compileStmt state func._stmt
-        else if builtins.isAttrs func && (func?__kind) then (
-          if func.__kind == "assign" then
-            assert lib.assertMsg
-              (luaType func.expr == null || luaType func.val == null || luaType func.val == func.expr._type)
-              "error: setting ${compileExpr state func.expr} to wrong type. It should be ${luaType func.expr} but is ${luaType func.val}";
-            "${compileExpr state func.expr} = ${compileExpr state func.val}"
-          else if func.__kind == "let" then ''
-            ${builtins.concatStringsSep "\n" (lib.imap0 (n: val:
-            "local ${moduleName}_var${builtins.toString (scope + n)} = ${
-              compileExpr state val
-            }") func.vals)}
-            ${
-              let res = applyVars (builtins.length func.vals) "${moduleName}_var" scope func.func; in
-              compileStmt (pushScope (builtins.length func.vals) state) res.result
-            }''
-          else if func.__kind == "letrec" then let argc = builtins.length func.vals; in ''
-            ${builtins.concatStringsSep "\n" (lib.imap0 (n: val:
-            "local ${moduleName}_var${builtins.toString (scope + n)} = ${
-              let res = applyVars argc "${moduleName}_var" scope val; in
-              compileExpr (pushScope argc state) res.result
-            }") func.vals)}
-            ${
-              let res = applyVars argc "${moduleName}_var" scope func.func; in
-              compileStmt (pushScope (builtins.length func.vals) state) res.result
-            }''
-          else if func.__kind == "for" then let
-            res = applyVars func.argc "${moduleName}_var" scope func.body;
-            argc = if func.argc != null then func.argc else res.argc;
-            varNames = builtins.genList (n: "${moduleName}_var${builtins.toString (scope + n)}") argc;
-            in ''
-              for ${builtins.concatStringsSep "," varNames} in ${compileExpr scope func.expr} do
-              ${
-                ident (compileStmt (pushScope1 state) res.result)
-              }
-              end''
-          else if func.__kind == "return" then
-            "return ${compileExpr state func.expr}"
-          else if func.__kind == "if" then
-            let func' =
-              if func.fallback != null || (builtins.elemAt (end func.conds) 0) != true then
-                func
-              else
-                { conds = pop func.conds; fallback = builtins.elemAt (end func.conds) 1; };
-            in
-            (lib.removeSuffix "else" ((builtins.concatStringsSep "" (map
-              (cond: ''
-                if ${compileExpr state (builtins.elemAt cond 0)} then
-                ${ident (compileStmt state (builtins.elemAt cond 1))}
-                else'')
-              func'.conds))
-            + (if func'.fallback != null then "\n${ident (compileStmt state func'.fallback)}\n" else ""))) + "end"
-          else if func.__kind == "custom" then
-            let res = func.callback state; in compileStmt res.state res.result
-          else compileExpr state func
-        ) else compileExpr state func
+      compileStmt = state@{ moduleName, scope, ... }: stmt: (
+        if builtins.isList stmt then
+          builtins.concatStringsSep "\n" (lib.imap0 (i: compileStmt (pushName i state)) stmt)
+        else if builtins.isAttrs stmt && (stmt?__kind) && stmt.__kind == "customStmt" then
+          stmt.__callback (stmt // { self = stmt; inherit state; })
+        else if builtins.isAttrs stmt && (stmt?__kind) && stmt.__kind == "rawStmt" then
+          "${stmt._name}"
+        else compileExpr state stmt
       );
 
       # compile a module
@@ -177,72 +133,108 @@ let
     neovim = attrs@{ neovim-unwrapped ? null, plugins ? [], extraLuaPackages ? (_: []) }:
       pkgs.callPackage ./stdlib/nvim.nix (attrs // {
         inherit plugins extraLuaPackages;
-        inherit (keywords) CALL MACRO APPLY LET;
-        inherit (utils) compileExpr;
+        inherit (keywords) CALL LMACRO APPLY LET;
+        inherit (utils) compileExpr compileStmt;
       });
 
     lua = attrs@{ lua ? null }:
       pkgs.callPackage ./stdlib/lua.nix (attrs // {
-        inherit (keywords) CALL MACRO APPLY LET;
-        inherit (utils) compileExpr;
+        inherit (keywords) CALL LMACRO APPLY LET;
+        inherit (utils) compileExpr compileStmt;
       });
 
-    keywords = rec {
+    keywords = let inherit (utils) compileExpr compileFunc compileStmt; in rec {
       # pass some raw code to lua directly
+      # string -> expr&stmt
       RAW = name: { __kind = "raw"; _name = name; };
+      # raw statement
+      RAW' = name: { __kind = "rawStmt"; _name = name; };
+
+      LIST_PART = list:
+        if builtins.isList list then list
+        else if builtins.isAttrs list && list?__list then list.__list
+        else if builtins.isAttrs list then []
+        else throw "this isn't a table";
+
+      ATTR_PART = attrs:
+        if builtins.isList attrs then {}
+        else lib.filterAttrs (k: v: k != "__list") attrs;
+
+      MERGE = a: b:
+        let
+          listA = LIST_PART a;
+          listB = LIST_PART b; 
+          attrsA = ATTR_PART a;
+          attrsB = ATTR_PART b;
+          lists = listA ++ listB;
+          attrs = attrsA // attrsB;
+        in
+          if lists == [] then attrs
+          else if attrs == {} then lists
+          else attrs // { __list = lists; };
 
       # Access a property
       # Corresponding lua code: table.property
-      # expr -> identifier -> expr
-      PROP = expr: name: { __kind = "prop"; inherit expr name; };
+      # expr -> string -> expr
+      PROP = expr: name: EMACRO ({ state, ...}:
+        assert lib.assertMsg (checkType (luaType expr) "table") "Unable to get property ${name} of a ${luaType expr}!";
+        compileExpr state (UNSAFE_PROP expr name));
+      UNSAFE_PROP = expr: name: EMACRO ({ state, ...}:
+        "${wrapExpr (compileExpr state expr)}.${name}");
 
       # Apply a list of arguments to a function/operator
-      APPLY = func: list: if list == [] then func else APPLY (func (builtins.head list)) (builtins.tail list);
+      APPLY = builtins.foldl' (a: b: a b);
 
       # Call something
       # Useful if you need to call a zero argument function, or if you need to handle some weird metatable stuff
       # corresponding lua code: someFunc()
       # expr -> arg1 -> ... -> argN -> expr
-      CALL = func: {
-        __functor = self: arg: {
-          inherit (self) __functor _func __kind;
-          _args = self._args ++ [ arg ];
-        };
-        __kind = "call";
-        _func = func;
-        _args = [];
-      };
+      CALL = func: EMACRO' ({ args, state, ... }:
+        assert lib.assertMsg
+          ((!(func?_minArity) || (builtins.length args) >= func._minArity) && (!(func?_maxArity) || (builtins.length args) <= func._maxArity))
+          "error: wrong function arity for ${compileExpr state func}! expected at least ${builtins.toString func._minArity}; found ${builtins.toString (builtins.length args)}";
+        compileExpr state (APPLY (UNSAFE_CALL func) args)
+      );
+      UNSAFE_CALL = func: EMACRO' ({ args, state, ... }:
+        "${wrapExpr (compileExpr state func)}(${builtins.concatStringsSep ", " (map (compileExpr state) args)})"
+      );
 
       # Call a method
       # corresponding lua code: someTable:someFunc()
       # expr -> identifier -> arg1 -> ... -> argN -> expr
-      MCALL = val: name: {
-        __functor = self: arg: {
-          inherit (self) __functor __kind val name;
-          args = self.args ++ [arg];
-        };
-        __kind = "mcall";
-        inherit val name;
-        args = [];
-      };
+      MCALL = val: name: EMACRO' ({ args, state, ... }:
+          "${wrapExpr (compileExpr state val)}:${name}(${builtins.concatStringsSep ", " (map (compileExpr state) args)})");
+      # Call a property
+      # corresponding lua code: someTable.someFunc()
+      PCALL = val: name: EMACRO' ({ args, state, ... }:
+          "${wrapExpr (compileExpr state val)}.${name}(${builtins.concatStringsSep ", " (map (compileExpr state) args)})");
 
-      # corresponding lua code: =
+      # corresponding lua code: a = b
       # expr -> expr -> stmt
-      SET = expr: val: { __kind = "assign"; inherit expr val; };
+      SET = expr: val: SMACRO' ({ args, state, ... }:
+        assert lib.assertMsg
+          (checkType (luaType expr) (luaType val))
+          "error: setting ${compileExpr state expr} to wrong type. It should be ${luaType expr} but is ${luaType val}";
+        compileStmt state (APPLY UNSAFE_SET args)) expr val;
+      UNSAFE_SET = expr: val: SMACRO' ({ args, state, ... }:
+        let
+          target = builtins.head args;
+          vals = builtins.tail args;
+        in "${compileExpr state target} = ${builtins.concatStringsSep ", " (map (compileExpr state) vals)}") expr val;
 
-      OP1 = op: expr: { __kind = "op1"; inherit expr; };
-      NOT = OP1 "~";
+      # opName -> expr -> expr
+      OP1 = op: expr: EMACRO ({ state, ...}:
+        "${op}${wrapExpr (compileExpr state expr)}");
+
+      # The following operators have the signature
+      # expr -> expr
+      LEN = OP1 "#";
+      NOT = OP1 "not ";
+      UNM = OP1 "-";
 
       # opName -> expr1 -> ... -> exprN -> expr
-      OP2 = op: arg1: arg2: {
-        __functor = self: arg: {
-          inherit (self) __functor __kind op;
-          args = self.args ++ [ arg ];
-        };
-        __kind = "op2";
-        inherit op;
-        args = [arg1 arg2];
-      };
+      OP2 = op: arg1: arg2: EMACRO' ({ args, state, ...}:
+        builtins.concatStringsSep " ${op} " (map (x: wrapExpr (compileExpr state x)) args)) arg1 arg2;
 
       # The following all have the signature
       # expr1 -> ... -> exprN -> expr
@@ -255,44 +247,100 @@ let
       AND = OP2 "and";
       OR = OP2 "or";
 
+      CAT = OP2 "..";
       ADD = OP2 "+";
-      SUB = OP2 "+";
+      SUB = OP2 "-";
       MUL = OP2 "*";
       DIV = OP2 "/";
+      MOD = OP2 "%";
+      POW = OP2 "^";
 
       # Corresponding lua code: for ... in ...
       # argc -> expr -> (expr1 -> ... -> exprN -> stmts) -> stmts
-      FORIN' = argc: expr: body: { __kind = "for"; inherit argc expr body; };
+      FORIN' = argc: expr: body: SMACRO ({ state, ... }:
+        let
+          prefix = "${state.moduleName}_var";
+          res = applyVars argc prefix state.scope body;
+          argc' = if argc != null then argc else res.argc;
+          varNames = builtins.genList (n: "${varName prefix (state.scope + n)}") argc';
+        in ''
+          for ${builtins.concatStringsSep "," varNames} in ${compileExpr state expr} do
+          ${ident (compileStmt (pushScope argc state) res.result)}
+          end'');
+
+      # expr -> (expr1 -> ... -> exprN -> stmts) -> stmts
       FORIN = FORIN' null;
-      FORIN1 = FORIN' 1;
-      FORIN2 = FORIN' 2;
-      FORIN3 = FORIN' 3;
+
+      FORRANGE = arg1: arg2: arg3: SMACRO' ({ args, state, ... }:
+        let
+          vars =
+            if builtins.length args == 3 || builtins.length args == 4 then
+              map (compileExpr state) (lib.init args)
+            else throw "for range can only receive 3 or 4 arguments";
+          body = lib.last args;
+          prefix = "${state.moduleName}_var";
+          name = varName prefix state.scope;
+        in ''
+          for ${name} = ${builtins.concatStringsSep "," vars} do
+          ${ident (compileStmt (pushScope1 state) (body (RAW name)))}
+          end''
+      ) arg1 arg2 arg3;
+
+      WHILE = cond: body: SMACRO ({ state, ... }: ''
+        while ${compileExpr state cond} do
+        ${ident (compileStmt state body)}
+        end
+      '');
+
+      REPEAT = body: cond: SMACRO ({ state, ... }: ''
+        repeat
+        ${ident (compileStmt state body)}
+        until ${compileExpr state cond}
+      '');
 
       # Issues a return statement
       # Corresponding lua code: return
       # expr -> stmt
-      RETURN = expr: { __kind = "return"; inherit expr; };
+      RETURN = SMACRO' ({ args, state, ... }:
+        if args == [] then "return" 
+        else "return ${builtins.concatStringsSep ", " (map (compileExpr state) args)}");
+
+      BREAK = RAW' "break";
 
       # Creates a zero argument function with user-provided statements
       # stmts -> expr
-      DEFUN = func: { __kind = "defun"; inherit func; };
+      DEFUN = func: EMACRO ({ state, ... }: (compileFunc state { id = ""; var = false; } func));
+      # Creates a vararg functions (last argument will be the hidden `arg` lua variable)
+      # stmts -> expr
+      DEFUN_VAR = func: EMACRO ({ state, ... }: (compileFunc state { id = ""; var = true; } func));
 
       # Corresponding lua code: if then (else?)
       # (expr -> stmts ->)* (fallback expr ->)? stmts
-      IF = expr: stmt: {
-        __functor = self: arg:
-          if self.fallback == null then {
-            inherit (self) __kind __functor conds;
-            fallback = arg;
+      IF = expr: stmt: SMACRO' ({ args, state, ... }:
+        let
+          data = if (builtins.length args) / 2 * 2 != (builtins.length args) then {
+            branches = lib.init args;
+            fallback = lib.last args;
+          } else if builtins.elemAt args ((builtins.length args) - 2) == ELSE then {
+            branches = lib.take ((builtins.length args) - 2) args;
+            fallback = lib.last args;
           } else {
-            inherit (self) __kind __functor;
-            conds = self.conds ++ [[self.fallback arg]];
+            branches = args;
             fallback = null;
           };
-        __kind = "if";
-        fallback = null;
-        conds = [[expr stmt]];
-      };
+        in
+          (lib.removeSuffix "else" ((builtins.concatStringsSep "" (lib.imap0 (i: x:
+            if (i / 2 * 2) == i then ''
+              if ${compileExpr state x} then
+              ''
+            else ''
+              ${ident (compileStmt state x)}
+              else'') data.branches))
+            + (if data.fallback != null then
+                "\n${ident (compileStmt state data.fallback)}\n"
+              else "")))
+          + "end"
+      ) expr stmt;
 
       # Signifies the fallback branch in IF. May only be the last branch.
       # Note that you may also omit it and just include the last branch without a preceding condition.
@@ -300,39 +348,86 @@ let
 
       # Corresponding lua code: table[key]
       # table -> key -> expr
-      ATTR = table: key: { __kind = "tableAttr"; inherit table key; };
+      IDX = table: key: EMACRO ({ state, ... }:
+        assert
+          lib.assertMsg
+            (checkType (luaType table) "table")
+            "Unable to get key ${compileExpr state key} of a ${luaType table} ${compileExpr state table}!";
+        compileExpr state (UNSAFE_IDX table key));
+
+      UNSAFE_IDX = table: key: EMACRO ({ state, ... }:
+        "${wrapExpr (compileExpr state table)}[${compileExpr state key}]");
 
       # Creates variables and passes them to the function
       # Corresponding lua code: local ... = ...
       # expr1 -> ... -> exprN -> (expr1 -> ... -> exprN -> stmt) -> stmt
-      LET = arg1: arg2: {
-        __functor = self: arg: {
-          inherit (self) __kind __functor;
-          vals = self.vals ++ [ self.func ];
-          func = arg;
-        };
-        __kind = "let";
-        vals = [arg1];
-        func = arg2;
-      };
+      LET = LMACRO ({ state, vars, ...}:
+      map ({ name, value, ... }: {
+        code = compileExpr state value;
+        expr = RAW name;
+      }) vars);
 
       # Creates variables and passes them to the function as well as variable binding code
       # Corresponding lua code: local ... = ...
       # ((expr1 -> ... -> exprN) ->)* (expr1 -> ... -> exprN -> stmt) -> stmt
-      LETREC = arg1: arg2: {
-        __functor = self: arg: {
-          inherit (self) __kind __functor;
-          vals = self.vals ++ [ self.func ];
-          func = arg;
-        };
-        __kind = "letrec";
-        vals = [arg1];
-        func = arg2;
-      };
+      LETREC = LMACRO ({ state, vars, ...}:
+        map
+          ({ name, value }: {
+            code = compileExpr
+              (pushScope (builtins.length vars) state)
+              (APPLY (applyRawVar value) (map (var: RAW var.name) vars));
+            expr = RAW name;
+          })
+        vars);
 
       # Process arbitrary code during compilation to be able to access state
       # (state -> { result = (stmt|expr), state = new state }) -> (stmt|expr)
-      MACRO = callback: { __kind = "custom"; inherit callback; };
+      MACRO = isStmt: callback: {
+        __kind = if isStmt then "customStmt" else "custom";
+        __callback = callback;
+      };
+      SMACRO = MACRO true;
+      EMACRO = MACRO false;
+      # MACRO variant that passes a {args} argument
+      MACRO' = stmt: callback: (MACRO stmt callback) // {
+        args = [];
+        __functor = self: arg: {
+          inherit (self) __kind __functor __callback;
+          args = self.args ++ [arg];
+        };
+      };
+      SMACRO' = MACRO' true;
+      EMACRO' = MACRO' false;
+
+      # Create custom "let" generators
+      # binding processor is a function that receives
+      # {
+      #   state = initial state before the let binding;
+      #   vars = a list of{
+      #     name (var name); value (whatever user passed to let);
+      #   }
+      # }
+      # and must return for each binding:
+      # {
+      #   code = raw code which the variables will be set to;
+      #   expr = whatever data will be passed to the user;
+      # }
+      LMACRO = processor: arg1: arg2: SMACRO' ({ args, state, ... }:
+        let 
+          func = lib.last args;
+          vals = lib.init args;
+          prefix = "${state.moduleName}_var";
+          names = builtins.genList (i: varName prefix (state.scope + i)) (builtins.length vals);
+          values = processor {
+            inherit state;
+            vars = (lib.zipListsWith (name: value: { inherit name value; }) names vals);
+          };
+        in ''
+          ${builtins.concatStringsSep "\n" (lib.zipListsWith (key: val:
+            "local ${key} = ${val.code}"
+          ) names values)}
+          ${compileStmt (pushScope (builtins.length vals) state) (APPLY (applyRawVar func) (map (x: x.expr) values))}''
+      ) arg1 arg2;
     };
   }; in {
     options = {
@@ -342,6 +437,6 @@ let
       };
     };
     config = {
-      notlua = result;
+      inherit notlua;
     };
   }
