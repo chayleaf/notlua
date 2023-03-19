@@ -10,16 +10,16 @@ let
     let
       v' = update self prefix v;
     in
-    (if builtins.isAttrs v && v?__kind then
-      (if v.__kind == "rec" then
+    (if builtins.isAttrs v && v?__kind__ then
+      (if v.__kind__ == "rec" then
         lib.attrByPath (lib.splitString "." v.path) null self
-      else if v.__kind == "raw" && v._type == "function" then
+      else if v.__kind__ == "raw" && ((v.__type__ == "function") || (v?__meta__ && v.__meta__?__call)) then
         v' // {
           __functor = keywords.CALL;
         }
       else v'
       ) else if builtins.isAttrs v then v'
-    else if prefix != "" && k == "_name" then
+    else if prefix != "" && k == "__name__" then
       (if v == "" then prefix else "${prefix}.${v}")
     else v));
 
@@ -32,53 +32,68 @@ let
 
   initTable = table: IF (NOT table) (SET table { });
   setTable = table: lib.mapAttrsToList (k1: v1: SET (PROP table k1) v1);
-  initSetTable = table: v: lib.toList (SET table { }) ++ (setTable table v);
+  initSetTable = table: v: lib.toList (initTable table) ++ (setTable table v);
+  forceInitSetTable = table: v: lib.toList (SET table { }) ++ (setTable table v);
 
   dump1 =
     let
       type = CALL (RAW "type");
       debug-getinfo = CALL (RAW "debug.getinfo");
+      getmetatable = CALL (RAW "getmetatable");
     in
     (seen: dump1: dump2: k: v: path: res:
       let
         seen' = IDX seen v;
-        __kind = "raw";
-        _name = CAT path k;
+        __kind__ = "raw";
+        __name__ = CAT path k;
         res' = IDX res k;
       in
-      IF
-        (EQ (type v) "table")
-        (IF seen'
-          (IF
-            (AND (NOT res') (NE seen' true))
+      [
+        # dump metatable
+        (IF (AND (NE (type v) "string") (NE (getmetatable v) null))
+          (LET [ ] (getmetatable v) (keys: metatable: [
+            (initTable res')
+            (IF (EQ (type (PROP metatable "__index")) "table")
+              (dump2 (PROP metatable "__index") __name__ res'))
+            (setTable res' {
+              __meta__ = { };
+            })
+            (dump2 metatable (CAT path k "!!meta") (PROP res' "__meta__"))
+          ])))
+        (IF
+          (EQ (type v) "table")
+          (IF seen'
+            (IF
+              (AND (NOT res') (NE seen' true))
+              (forceInitSetTable res' {
+                __kind__ = "rec";
+                path = seen';
+              }))
+            ELSE [
+            (initTable res')
+            (dump2 v __name__ res')
+            (setTable res' {
+              inherit __kind__ __name__;
+              __type__ = "table";
+            })
+          ])
+          (EQ (type v) "function")
+          (LET (debug-getinfo v) ({ nparams, isvararg, ... }: [
             (initSetTable res' {
-              __kind = "rec";
-              path = seen';
+              inherit __kind__ __name__;
+              __type__ = "function";
+              __minArity__ = nparams;
+            })
+            (IF (NOT isvararg) (setTable res' {
+              __maxArity__ = nparams;
             }))
-          ELSE [
-          (initTable res')
-          (dump2 v (CAT path k) res')
-          (setTable res' {
-            inherit __kind _name;
-            _type = "table";
-          })
-        ])
-        (EQ (type v) "function")
-        (LET (debug-getinfo v) ({ nparams, isvararg, ... }: [
+          ]))
+          ELSE
           (initSetTable res' {
-            inherit __kind _name;
-            _type = "function";
-            _minArity = nparams;
-          })
-          (IF (NOT isvararg) (setTable res' {
-            _maxArity = nparams;
+            inherit __kind__ __name__;
+            __type__ = type v;
           }))
-        ]))
-        ELSE
-        (initSetTable res' {
-          inherit __kind _name;
-          _type = type v;
-        }));
+      ]);
 
   dump2 =
     let

@@ -173,6 +173,8 @@ assert chk
     this will be lua in 1976
   '';
 };
+assert !(builtins.tryEval (compileExpr defaultState (ADD "" 5))).success;
+assert !(builtins.tryEval (compileExpr defaultState (UNM ""))).success;
 assert !(builtins.tryEval (compileStmt defaultState (SET nvim.stdlib.vim.o.colorcolumn 17))).success;
 assert chk
 {
@@ -267,8 +269,8 @@ assert !(builtins.tryEval (compileStmt defaultState (LETREC
         (RETURN (ADD (fib (SUB n 1) 5) (fib (SUB n 2))))))
   (fib: lua.stdlib.print (fib 5))))).success;
 assert eq (flake.keywords.MERGE { a = 1; } [ ]) { a = 1; };
-assert eq (flake.keywords.MERGE { a = 1; } [ 1 ]) { a = 1; __list = [ 1 ]; };
-assert eq (flake.keywords.MERGE { a = 1; __list = [ 1 ]; } [ 2 ]) { a = 1; __list = [ 1 2 ]; };
+assert eq (flake.keywords.MERGE { a = 1; } [ 1 ]) { a = 1; __list__ = [ 1 ]; };
+assert eq (flake.keywords.MERGE { a = 1; __list__ = [ 1 ]; } [ 2 ]) { a = 1; __list__ = [ 1 2 ]; };
 assert chk
 {
   expr = flake.keywords.MERGE { a = 1; } [ 1 ];
@@ -292,6 +294,11 @@ assert chk
 {
   expr = (IDX nvim.stdlib.vim.bo "test").bin;
   raw = "vim.bo[\"test\"].binary";
+};
+assert chk
+{
+  expr = nvim.stdlib.vim.cmd "test";
+  raw = "vim.cmd(\"test\")";
 };
 assert chk
 {

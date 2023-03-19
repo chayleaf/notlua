@@ -15,21 +15,21 @@ let
 
   # maps a type definition tree, changing the base name to new_name
   updateNames = new_name: attrs:
-    if attrs?_name then
+    if attrs?__name__ then
       lib.mapAttrsRecursive
         (path: value:
-          if lib.last path == "_name" then
-            new_name + (lib.removePrefix attrs._name value)
+          if lib.last path == "__name__" then
+            new_name + (lib.removePrefix attrs.__name__ value)
           else value)
         attrs
     else attrs;
 
   # maps a type definition tree, making the values the properties of of_what
   updateProps = of_what: attrs:
-    if attrs?_name then
+    if attrs?__name__ then
       let
-        attrs' = lib.filterAttrs (k: v: k != "_name") attrs;
-        prop = if attrs._name == "" then of_what else notlua.keywords.UNSAFE_PROP of_what attrs._name;
+        attrs' = lib.filterAttrs (k: v: k != "__name__") attrs;
+        prop = if attrs.__name__ == "" then of_what else notlua.keywords.UNSAFE_PROP of_what attrs.__name__;
       in
       (builtins.mapAttrs (k: v: if isAttrs v then updateProps prop v else v) attrs')
       // prop
@@ -41,47 +41,47 @@ let
       type = luaType val;
       raw = notlua.keywords.RAW name;
     in
-    if type == null || !type?_type then raw
-    else if type._type == "function" then type // {
+    if type == null || !type?__type__ then raw
+    else if type.__type__ == "function" then type // {
       __functor = notlua.keywords.CALL;
     } // raw
-    else if type._type == "table" then (updateNames name val) // raw
+    else if type.__type__ == "table" then (updateNames name val) // raw
     else type // raw;
 
   luaType = val:
-    if isAttrs val && val?_retType then val._retType
-    else if isAttrs val && val?_type && val._type == null then null
-    else if isAttrs val && val?_type then
-      lib.filterAttrs (k: v: elem k [ "_retType" "_type" "_minArity" "_maxArity" ]) val
-    else if isAttrs val && val?__kind then null
-    else if isList val || isAttrs val then { _type = "table"; }
-    else if isPath val || isString val then { _type = "string"; }
-    else if isInt val || isFloat val then { _type = "number"; }
-    else if isNull val then { _type = "nil"; }
-    else if isFunction val then { _type = "function"; } // (funcType val)
-    else if isBool val then { _type = "boolean"; }
+    if isAttrs val && val?__retType__ then val.__retType__
+    else if isAttrs val && val?__type__ && val.__type__ == null then null
+    else if isAttrs val && val?__type__ then
+      lib.filterAttrs (k: v: elem k [ "__retType__" "__type__" "__minArity__" "__maxArity__" ]) val
+    else if isAttrs val && val?__kind__ then null
+    else if isList val || isAttrs val then { __type__ = "table"; }
+    else if isPath val || isString val then { __type__ = "string"; }
+    else if isInt val || isFloat val then { __type__ = "number"; }
+    else if isNull val then { __type__ = "nil"; }
+    else if isFunction val then { __type__ = "function"; } // (funcType val)
+    else if isBool val then { __type__ = "boolean"; }
     else null;
 
   funcType = val:
     (if isFunction val then
       let argc = countArgs val;
-      in { _minArity = argc; _maxArity = argc; }
-    else if !(isAttrs val) || !val?_minArity then { }
-    else if val?_maxArity then { inherit (val) _minArity _maxArity; }
-    else { inherit (val) _minArity; }) // { _retType = retType val; };
+      in { __minArity__ = argc; __maxArity__ = argc; }
+    else if !(isAttrs val) || !val?__minArity__ then { }
+    else if val?__maxArity__ then { inherit (val) __minArity__ __maxArity__; }
+    else { inherit (val) __minArity__; }) // { __retType__ = retType val; };
 
   retType = val:
     if isFunction val then let applied = applyVars null "" 1 val; in luaType applied.result
-    else if isAttrs val && val?_type && val._type != "function" then luaType val
+    else if isAttrs val && val?__type__ && val.__type__ != "function" then luaType val
     else null;
 
   humanType = val:
     let
       type = luaType val;
     in
-    if type == null || !(isAttrs type) || !type?_type || type._type == null then
+    if type == null || !(isAttrs type) || !type?__type__ || type.__type__ == null then
       "unknown"
-    else type._type;
+    else type.__type__;
 
   checkType = type1: type2:
     if type1 == null || type2 == null then true
@@ -89,6 +89,17 @@ let
       all
         (x: length x < 2 || builtins.any (x: x == null) x || elemAt x 0 == elemAt x 1)
         (lib.attrValues (lib.zipAttrs [ type1 type2 ]));
+
+  checkTypeAndMetaMatch = meta: args:
+    let args' = builtins.filter ({ type, ... }: type != "unknown") (map (expr: { inherit expr; type = humanType expr; }) args);
+    in if args' == [ ] then true
+    else if isAttrs (builtins.head args') && (builtins.head args')?__meta__ && hasAttr meta (builtins.head args').__meta__ then
+      all ({ expr, ... }: isAttrs expr && expr?__meta__ && expr.__meta__ == (builtins.head args').__meta__) args'
+    else
+      all ({ type, ... }: type == (builtins.head args').type) args';
+
+  isTypeOrHasMeta = types: meta: expr:
+    (elem (humanType expr) (types ++ [ "unknown" ])) || (isAttrs expr && expr?__meta__ && hasAttr meta expr.__meta__);
 
   # The following functions may take state: moduleName and scope
   # scope is how many variables are currently in scope
@@ -177,7 +188,7 @@ let
 
       compileWrapExpr = state: expr:
         let compiled = compileExpr state expr;
-        in if isAttrs expr && expr?__wrapSafe && expr.__wrapSafe == true then compiled
+        in if isAttrs expr && expr?__wrapSafe__ && expr.__wrapSafe__ == true then compiled
         else if !(isAttrs expr) then compiled
         else wrapExpr compiled;
 
@@ -193,7 +204,7 @@ let
             {
             ${identCat (map (x: compileExpr state x + ";" ) expr)}
             }'')
-        else if !expr?__kind then
+        else if !expr?__kind__ then
           let
             lists = notlua.keywords.LIST_PART expr;
             attrs = notlua.keywords.ATTR_PART expr;
@@ -203,19 +214,19 @@ let
             + (if lists == [ ] then "" else "\n" + (identCat (map (x: compileExpr state x + ";") lists)))
             + (if attrs == { } then "" else "\n" + (identCat (lib.mapAttrsToList (k: v: "${wrapKey state k} = ${compileExpr state v};") attrs)))
             + "\n}")
-        else if expr.__kind == "raw" then
-          expr._name
-        else if expr.__kind == "custom" then
-          expr.__callback (expr // { self = expr; inherit state; })
-        else throw "Invalid expression kind ${expr.__kind}";
+        else if expr.__kind__ == "raw" then
+          expr.__name__
+        else if expr.__kind__ == "custom" then
+          expr.__callback__ (expr // { self = expr; inherit state; })
+        else throw "Invalid expression kind ${expr.__kind__}";
 
       compileStmt = state@{ scope, ... }: stmt:
         if isList stmt then
           catLines (lib.imap0 (i: compileStmt (pushName i state)) stmt)
-        else if isAttrs stmt && stmt?__kind && stmt.__kind == "customStmt" then
-          stmt.__callback (stmt // { self = stmt; inherit state; })
-        else if isAttrs stmt && stmt?__kind && stmt.__kind == "rawStmt" then
-          stmt._name
+        else if isAttrs stmt && stmt?__kind__ && stmt.__kind__ == "customStmt" then
+          stmt.__callback__ (stmt // { self = stmt; inherit state; })
+        else if isAttrs stmt && stmt?__kind__ && stmt.__kind__ == "rawStmt" then
+          stmt.__name__
         else compileExpr state stmt;
 
       # compile a module
@@ -238,19 +249,19 @@ let
     keywords = let inherit (utils) compileExpr compileWrapExpr compileFunc compileStmt; in rec {
       # pass some raw code to lua directly
       # string -> expr
-      RAW = name: { __kind = "raw"; _name = name; };
+      RAW = name: { __kind__ = "raw"; __name__ = name; };
       # string -> stmt
-      RAW' = name: { __kind = "rawStmt"; _name = name; };
+      RAW' = name: { __kind__ = "rawStmt"; __name__ = name; };
 
       LIST_PART = list:
         if isList list then list
-        else if isAttrs list && list?__list then list.__list
+        else if isAttrs list && list?__list__ then list.__list__
         else if isAttrs list then [ ]
         else throw "this isn't a table";
 
       ATTR_PART = attrs:
         if isList attrs then { }
-        else lib.filterAttrs (k: v: k != "__list") attrs;
+        else lib.filterAttrs (k: v: k != "__list__") attrs;
 
       MERGE = a: b:
         let
@@ -263,7 +274,7 @@ let
         in
         if lists == [ ] then attrs
         else if attrs == { } then lists
-        else attrs // { __list = lists; };
+        else attrs // { __list__ = lists; };
 
       # Access a property
       # Corresponding lua code: table.property
@@ -271,17 +282,18 @@ let
       PROP = expr: name: EMACRO
         ({ state, ... }:
           assert lib.assertMsg
-            (checkType (luaType expr) (luaType { }))
+            ((isTypeOrHasMeta [ "table" ] "__index" expr)
+              || (isTypeOrHasMeta [ "table" ] "__newindex" expr))
             "Unable to get property ${name} of a ${humanType expr}!";
           compileExpr state (UNSAFE_PROP expr name))
-      // (if isAttrs expr && expr?_name && hasAttr name expr then getAttr name expr else { })
-      // { __wrapSafe = true; };
+      // (if isAttrs expr && expr?__name__ && hasAttr name expr then getAttr name expr else { })
+      // { __wrapSafe__ = true; };
 
       UNSAFE_PROP = expr: name: EMACRO
         ({ state, ... }:
           "${compileWrapExpr state expr}.${name}")
-      // (if isAttrs expr && expr?_name && hasAttr name expr then getAttr name expr else { })
-      // { __wrapSafe = true; };
+      // (if isAttrs expr && expr?__name__ && hasAttr name expr then getAttr name expr else { })
+      // { __wrapSafe__ = true; };
 
       # Apply a list of arguments to a function/operator
       APPLY = foldl' applyVar;
@@ -291,25 +303,25 @@ let
       # corresponding lua code: someFunc()
       # expr -> arg1 -> ... -> argN -> expr
       CALL = func:
-        funcType func // (EMACRO' ({ _minArity ? null, _maxArity ? null, args, state, ... }:
+        funcType func // (EMACRO' ({ __minArity__ ? null, __maxArity__ ? null, args, state, ... }:
           assert lib.assertMsg
             (!(elem (humanType func) [ "number" "boolean" "nil" "string" ]))
             ("Calling a ${humanType args} (${compileExpr state func}) might be a bad idea! "
-              + "If you still want to do it, use UNSAFE_CALL instead of CALL");
+            + "If you still want to do it, use UNSAFE_CALL instead of CALL");
           assert lib.assertMsg
-            ((_minArity == null || (length args) >= _minArity)
-              &&
-              (_maxArity == null || (length args) <= _maxArity))
+            ((__minArity__ == null || (length args) >= __minArity__)
+            &&
+            (__maxArity__ == null || (length args) <= __maxArity__))
             ("error: wrong function arity for ${compileExpr state func}! "
-              + "expected at least ${toString _minArity}; "
-              + (if _maxArity != null then "at most ${toString _maxArity}; " else "")
-              + "found ${toString (length args)}");
+            + "expected at least ${toString __minArity__}; "
+            + (if __maxArity__ != null then "at most ${toString __maxArity__}; " else "")
+            + "found ${toString (length args)}");
           compileExpr state (APPLY (UNSAFE_CALL func) args)
-        )) // { __wrapSafe = true; };
+        )) // { __wrapSafe__ = true; };
       UNSAFE_CALL = func: EMACRO'
         ({ args, state, ... }:
           "${compileWrapExpr state func}(${catComma' (map (compileExpr state) args)})"
-        ) // { __wrapSafe = true; };
+        ) // { __wrapSafe__ = true; };
 
       # Call a method
       # corresponding lua code: someTable:someFunc()
@@ -321,11 +333,11 @@ let
             ("Calling a method of a ${humanType val} (${compileExpr state val}) might be a bad idea! "
               + "If you still want to do it, use UNSAFE_MCALL instead of MCALL");
           compileExpr state (APPLY (UNSAFE_MCALL val name) args)
-        ) // { __wrapSafe = true; };
+        ) // { __wrapSafe__ = true; };
       UNSAFE_MCALL = val: name: EMACRO'
         ({ args, state, ... }:
           "${compileWrapExpr state val}:${name}(${catComma' (map (compileExpr state) args)})"
-        ) // { _type = null; __wrapSafe = true; };
+        ) // { __type__ = null; __wrapSafe__ = true; };
 
       # corresponding lua code: a = b
       # expr -> expr -> stmt
@@ -347,44 +359,36 @@ let
         expr
         val;
 
-      OP1' = type: types: op: expr:
+      OP1' = type: typeCheck: op: expr:
         (OP1 op expr)
-        // (if types != null then { types = types ++ [ null "unknown" ]; } else { })
-        // (if type != null then { _type = type; } else { });
+        // (if typeCheck != null then { inherit typeCheck; } else { })
+        // (if type != null then { __type__ = type; } else { });
 
       # opName -> expr -> expr
-      OP1 = op: expr: EMACRO ({ state, types ? [ ], ... }:
+      OP1 = op: expr: EMACRO ({ state, typeCheck ? null, ... }:
         assert lib.assertMsg
-          (types == [ ] || elem (humanType expr) types)
+          (typeCheck == null || typeCheck expr)
           ("Trying to apply `${op}` to an expression ${compileExpr state expr} of type ${humanType expr}! "
             + "If that's what you intended, try OP1 \"${op}\" <expr> instead.");
         "${op}${compileWrapExpr state expr}");
 
       # The following operators have the signature
       # expr -> expr
-      LEN = OP1' "number" [ "string" "table" ] "#";
+      LEN = OP1' "number" (isTypeOrHasMeta [ "string" "table" ] "__len") "#";
       NOT = OP1' "boolean" null "not ";
-      UNM = OP1' "number" [ "number" ] "-";
-      BITNOT = OP1' "number" [ "number" ] "~";
+      UNM = OP1' "number" (isTypeOrHasMeta [ "number" ] "__unm") "-";
+      BITNOT = OP1' "number" (isTypeOrHasMeta [ "number" ] "__bnot") "~";
 
-      OP2' = type: types: op: arg1: arg2:
+      OP2' = type: typeCheck: op: arg1: arg2:
         (OP2 op arg1 arg2)
-        // (if types != null then { types = types ++ [ null "unknown" ]; } else { })
-        // (if type != null then { _type = type; } else { });
+        // (if typeCheck != null then { inherit typeCheck; } else { })
+        // (if type != null then { __type__ = type; } else { });
 
       # opName -> expr1 -> ... -> exprN -> expr
       OP2 = op: arg1: arg2: EMACRO'
-        ({ args, state, types ? [ ], ... }:
+        ({ args, state, typeCheck ? null, ... }:
           assert lib.assertMsg
-            (
-              types == [ ]
-              || (elem "match" types &&
-              (
-                let nonNullTypes = builtins.filter (x: x != null && x != "unknown") (map humanType args); in
-                length nonNullTypes == 0 || all (x: x == builtins.head nonNullTypes) nonNullTypes
-              ))
-              || (!(elem "match" types) && (all (lib.flip elem types) (map humanType args)))
-            )
+            (typeCheck == null || typeCheck args)
             ("Trying to apply `${op}` to expressions ${catComma' (map (compileExpr state) args)} of types "
               + "${catComma' (map humanType args)}! If that's what you intended, try OP2 \"${op}\" <exprs> instead");
           concatStringsSep " ${op} " (map (compileWrapExpr state) args))
@@ -393,22 +397,28 @@ let
 
       # The following all have the signature
       # expr1 -> ... -> exprN -> expr
-      EQ = OP2' "boolean" [ "match" ] "==";
-      NE = OP2' "boolean" [ "match" ] "~=";
-      GT = OP2' "boolean" [ "number" "string" "table" ] ">";
-      LT = OP2' "boolean" [ "number" "string" "table" ] "<";
-      GE = OP2' "boolean" [ "number" "string" "table" ] ">=";
-      LE = OP2' "boolean" [ "number" "string" "table" ] "<=";
+      EQ = OP2' "boolean" (checkTypeAndMetaMatch "__eq") "==";
+      NE = OP2' "boolean" (checkTypeAndMetaMatch "__eq") "~=";
+      LT = OP2' "boolean" (checkTypeAndMetaMatch "__lt") "<";
+      GT = OP2' "boolean" (checkTypeAndMetaMatch "__lt") ">";
+      LE = OP2' "boolean" (checkTypeAndMetaMatch "__le") "<=";
+      GE = OP2' "boolean" (checkTypeAndMetaMatch "__le") ">=";
       AND = OP2 "and";
       OR = OP2 "or";
 
       CAT = OP2' "string" null "..";
-      ADD = OP2' "number" [ "number" ] "+";
-      SUB = OP2' "number" [ "number" ] "-";
-      MUL = OP2' "number" [ "number" ] "*";
-      DIV = OP2' "number" [ "number" ] "/";
-      MOD = OP2' "number" [ "number" ] "%";
-      POW = OP2' "number" [ "number" ] "^";
+      ADD = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__add")) "+";
+      SUB = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__sub")) "-";
+      MUL = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__mul")) "*";
+      DIV = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__div")) "/";
+      IDIV = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__idiv")) "//";
+      MOD = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__mod")) "%";
+      POW = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__pow")) "^";
+      BITAND = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__band")) "&";
+      BITOR = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__bor")) "|";
+      BXOR = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__bxor")) "~";
+      SHL = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__shl")) "<<";
+      SHR = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__shr")) ">>";
 
       # Corresponding lua code: for ... in ...
       # argc -> expr -> (expr1 -> ... -> exprN -> stmts) -> stmts
@@ -476,17 +486,17 @@ let
       # stmts -> expr
       DEFUN = func:
         EMACRO ({ state, ... }: (compileFunc state { } func)) // {
-          _type = null;
-          _retType = luaType func;
-          _minArity = 0;
-          _maxArity = 0;
+          __type__ = null;
+          __retType__ = luaType func;
+          __minArity__ = 0;
+          __maxArity__ = 0;
         };
       # Creates a vararg functions (last argument will be the hidden `arg` lua variable)
       # stmts -> expr
       DEFUN_VAR = func:
         EMACRO ({ state, ... }: (compileFunc state { var = true; } func)) // {
-          _retType = retType func;
-          _minArity = countArgs func - 1;
+          __retType__ = retType func;
+          __minArity__ = countArgs func - 1;
         };
 
       # Corresponding lua code: if then (else?)
@@ -539,8 +549,8 @@ let
             compileExpr state (UNSAFE_IDX table key));
         in
         self
-        // (if builtins.isAttrs table && table?__entry then updateProps self table.__entry else { })
-        // { __wrapSafe = true; };
+        // (if builtins.isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
+        // { __wrapSafe__ = true; };
 
       UNSAFE_IDX = table: key:
         let
@@ -548,8 +558,8 @@ let
             "${compileWrapExpr state table}[${compileExpr state key}]");
         in
         self
-        // (if builtins.isAttrs table && table?__entry then updateProps self table.__entry else { })
-        // { __wrapSafe = true; };
+        // (if builtins.isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
+        // { __wrapSafe__ = true; };
 
       # Creates variables and passes them to the function
       # Corresponding lua code: local ... = ...
@@ -586,8 +596,8 @@ let
       # Process arbitrary code during compilation to be able to access state
       # (state -> { result = (stmt|expr), state = new state }) -> (stmt|expr)
       MACRO = isStmt: callback: {
-        __kind = if isStmt then "customStmt" else "custom";
-        __callback = callback;
+        __kind__ = if isStmt then "customStmt" else "custom";
+        __callback__ = callback;
       };
       SMACRO = MACRO true;
       EMACRO = MACRO false;

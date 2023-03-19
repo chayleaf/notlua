@@ -63,9 +63,9 @@ let
             ({ funcs, ... }: path: res: FORIN (pairs funcs) (k: { args, ... }:
               let
                 init = args: initSetTable (IDX res k) (args // {
-                  __kind = "raw";
-                  _name = CAT path k;
-                  _type = "function";
+                  __kind__ = "raw";
+                  __name__ = CAT path k;
+                  __type__ = "function";
                 });
               in
               IF
@@ -73,37 +73,37 @@ let
                 (IF
                   (EQ (LEN args) 1)
                   (init {
-                    _minArity = IDX args 1;
+                    __minArity__ = IDX args 1;
                   })
                   (EQ (LEN args) 2)
                   (init {
-                    _minArity = IDX args 1;
-                    _maxArity = IDX args 2;
+                    __minArity__ = IDX args 1;
+                    __maxArity__ = IDX args 2;
                   })
                   ELSE
                   (print "ERROR"))
                 (EQ (TYPE args) "number")
                 (init {
-                  _minArity = args;
-                  _maxArity = args;
+                  __minArity__ = args;
+                  __maxArity__ = args;
                 })
                 ELSE
                 (init {
-                  _minArity = 0;
-                  _maxArity = 0;
+                  __minArity__ = 0;
+                  __maxArity__ = 0;
                 })
             ))
             # dump options
             ({ options, ... }: path: res: [
-              (initSetTable (PROP res "bo.__entry") {
-                __kind = "raw";
-                _type = "table";
-                _name = "";
+              (initSetTable (PROP res "bo.__entry__") {
+                __kind__ = "raw";
+                __type__ = "table";
+                __name__ = "";
               })
-              (initSetTable (PROP res "wo.__entry") {
-                __kind = "raw";
-                _type = "table";
-                _name = "";
+              (initSetTable (PROP res "wo.__entry__") {
+                __kind__ = "raw";
+                __type__ = "table";
+                __name__ = "";
               })
               (LET
                 # types
@@ -116,27 +116,27 @@ let
                   let
                     k = full_name;
                     abbr = abbreviation;
-                    init = key: _type: [
+                    init = key: __type__: [
                       (initSetTable (IDX (PROP res key) k) {
-                        __kind = "raw";
-                        _name = CAT path key "." k;
-                        inherit _type;
+                        __kind__ = "raw";
+                        __name__ = CAT path key "." k;
+                        inherit __type__;
                       })
                       (IF (EQ (TYPE abbr) "string")
                         (initSetTable (IDX (PROP res key) abbr) {
-                          __kind = "rec";
+                          __kind__ = "rec";
                           path = CAT path key "." k;
                         }))
                     ];
-                    init2 = key: _type: [
-                      (initSetTable (IDX (PROP (PROP res key) "__entry") k) {
-                        inherit _type;
-                        _name = k;
+                    init2 = key: __type__: [
+                      (initSetTable (IDX (PROP (PROP res key) "__entry__") k) {
+                        inherit __type__;
+                        __name__ = k;
                       })
                       (IF (EQ (TYPE abbr) "string")
-                        (initSetTable (IDX (PROP (PROP res key) "__entry") abbr) {
-                          __kind = "rec";
-                          path = CAT path key ".__entry." k;
+                        (initSetTable (IDX (PROP (PROP res key) "__entry__") abbr) {
+                          __kind__ = "rec";
+                          path = CAT path key ".__entry__." k;
                         }))
                     ];
                     type' = IDX types type;
@@ -166,15 +166,15 @@ let
             (dumpf: dumpo:
               let vim = PROP result "vim"; in [
                 (initSetTable vim {
-                  __kind = "raw";
-                  _type = "table";
-                  _name = "vim";
+                  __kind__ = "raw";
+                  __type__ = "table";
+                  __name__ = "vim";
                 })
                 (FORIN (pairs (RAW "vim._submodules")) (k: [
                   (initSetTable (IDX vim k) {
-                    __kind = "raw";
-                    _type = "table";
-                    _name = CAT "vim." k;
+                    __kind__ = "raw";
+                    __type__ = "table";
+                    __name__ = CAT "vim." k;
                   })
                   (dump2 (IDX (RAW "vim") k) (CAT "vim." k) (IDX vim k))
                 ]))
