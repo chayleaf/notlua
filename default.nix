@@ -30,14 +30,17 @@ let
       raw = notlua.keywords.RAW name;
     in
     if type == null || !type?_type then raw
-    else if type._type == "function" then type // { __functor = self: self // (notlua.keywords.CALL self); } // raw
+    else if type._type == "function" then type // {
+      __functor = self: self // (notlua.keywords.CALL self) // { _retType = retType val; };
+    } // (arities val) // raw
     else if type._type == "table" then (updateNames name val) // raw
     else type // raw;
 
   luaType = val:
-    if isAttrs val && val?_type && val._type == null then null
+    if isAttrs val && val?_retType then val._retType
+    else if isAttrs val && val?_type && val._type == null then null
     else if isAttrs val && val?_type then
-      lib.filterAttrs (k: v: k == "_type" || k == "_minArity" || k == "_maxArity") val
+      lib.filterAttrs (k: v: elem k [ "_retType" "_type" "_minArity" "_maxArity"]) val
     else if isAttrs val && val?__kind then null
     else if isList val || isAttrs val then { _type = "table"; }
     else if isPath val || isString val then { _type = "string"; }
@@ -45,6 +48,18 @@ let
     else if isNull val then { _type = "nil"; }
     else if isFunction val then { _type = "function"; }
     else if isBool val then { _type = "boolean"; }
+    else null;
+
+  arities = val:
+    if isFunction val then let argc = countArgs val;
+    in { _minArity = argc; _maxArity = argc; }
+    else if !(isAttrs val) || !val?_minArity then null
+    else if val?_maxArity then { inherit (val) _minArity _maxArity; }
+    else { inherit (val) _minArity; };
+
+  retType = val:
+    if isFunction val then let applied = applyVars null "" 1 val; in luaType applied.result
+    else if isAttrs val && val?_type && val._type != "function" then luaType val
     else null;
 
   humanType = val:
@@ -117,6 +132,8 @@ let
         else self (scope + 1) (applyVar func (notlua.keywords.RAW (varName prefix scope))) (argc + 1);
     in
     self;
+
+  countArgs = func: (applyVars null "" 1 func).argc;
 
   notlua = rec {
     utils = rec {
@@ -232,11 +249,11 @@ let
       # Access a property
       # Corresponding lua code: table.property
       # expr -> string -> expr
-      PROP = expr: name: (EMACRO ({ state, ... }:
+      PROP = expr: name: EMACRO ({ state, ... }:
         assert lib.assertMsg
           (checkType (luaType expr) (luaType { }))
           "Unable to get property ${name} of a ${humanType expr}!";
-        compileExpr state (UNSAFE_PROP expr name)))
+        compileExpr state (UNSAFE_PROP expr name))
       // (if isAttrs expr && expr?_name && hasAttr name expr then getAttr name expr else { });
       UNSAFE_PROP = expr: name: EMACRO ({ state, ... }:
         "${wrapExpr (compileExpr state expr)}.${name}");
@@ -248,51 +265,38 @@ let
       # Useful if you need to call a zero argument function, or if you need to handle some weird metatable stuff
       # corresponding lua code: someFunc()
       # expr -> arg1 -> ... -> argN -> expr
-      CALL = func: (EMACRO' ({ args, state, ... }:
+      CALL = func: EMACRO' ({ _minArity ? null, _maxArity ? null, args, state, ... }:
         assert lib.assertMsg
           (!(elem (humanType func) [ "number" "boolean" "nil" "string" ]))
           ("Calling a ${humanType args} (${compileExpr state func}) might be a bad idea! "
             + "If you still want to do it, use UNSAFE_CALL instead of CALL");
         assert lib.assertMsg
-          ((!func?_minArity || (length args) >= func._minArity)
+          ((_minArity == null || (length args) >= _minArity)
             &&
-            (!func?_maxArity || (length args) <= func._maxArity))
+            (_maxArity == null || (length args) <= _maxArity))
           ("error: wrong function arity for ${compileExpr state func}! "
-            + "expected at least ${toString func._minArity}; "
-            + (if func?_maxArity then "at most ${toString func._maxArity}; " else "")
+            + "expected at least ${toString _minArity}; "
+            + (if _maxArity != null then "at most ${toString _maxArity}; " else "")
             + "found ${toString (length args)}");
         compileExpr state (APPLY (UNSAFE_CALL func) args)
-      )) // { _type = null; };
-      UNSAFE_CALL = func: (EMACRO' ({ args, state, ... }:
+      ) // { _type = null; };
+      UNSAFE_CALL = func: EMACRO' ({ args, state, ... }:
         "${wrapExpr (compileExpr state func)}(${catComma' (map (compileExpr state) args)})"
-      )) // { _type = null; };
+      ) // { _type = null; };
 
       # Call a method
       # corresponding lua code: someTable:someFunc()
       # expr -> identifier -> arg1 -> ... -> argN -> expr
-      MCALL = val: name: (EMACRO' ({ args, state, ... }:
+      MCALL = val: name: EMACRO' ({ args, state, ... }:
         assert lib.assertMsg
           (elem (humanType val) [ null "unknown" "table" ])
           ("Calling a method of a ${humanType val} (${compileExpr state val}) might be a bad idea! "
             + "If you still want to do it, use UNSAFE_MCALL instead of MCALL");
         compileExpr state (APPLY (UNSAFE_MCALL val name) args)
-      )) // { _type = null; };
-      UNSAFE_MCALL = val: name: (EMACRO' ({ args, state, ... }:
+      ) // { _type = null; };
+      UNSAFE_MCALL = val: name: EMACRO' ({ args, state, ... }:
         "${wrapExpr (compileExpr state val)}:${name}(${catComma' (map (compileExpr state) args)})"
-      )) // { _type = null; };
-
-      # Call a property
-      # corresponding lua code: someTable.someFunc()
-      PCALL = val: name: (EMACRO' ({ args, state, ... }:
-        assert lib.assertMsg
-          (elem (humanType val) [ null "unknown" "table" ])
-          ("Calling a property of a ${humanType val} (${compileExpr state val}) might be a bad idea! "
-            + "If you still want to do it, use UNSAFE_PCALL instead of PCALL");
-        compileExpr state (APPLY (UNSAFE_PCALL val name) args)
-      )) // { _type = null; };
-      UNSAFE_PCALL = val: name: (EMACRO' ({ args, state, ... }:
-        "${wrapExpr (compileExpr state val)}.${name}(${catComma' (map (compileExpr state) args)})"
-      )) // { _type = null; };
+      ) // { _type = null; };
 
       # corresponding lua code: a = b
       # expr -> expr -> stmt
@@ -433,10 +437,20 @@ let
 
       # Creates a zero argument function with user-provided statements
       # stmts -> expr
-      DEFUN = func: EMACRO ({ state, ... }: (compileFunc state { } func));
+      DEFUN = func:
+        EMACRO ({ state, ... }: (compileFunc state { } func)) // {
+          _type = null;
+          _retType = luaType func;
+          _minArity = 0;
+          _maxArity = 0;
+        };
       # Creates a vararg functions (last argument will be the hidden `arg` lua variable)
       # stmts -> expr
-      DEFUN_VAR = func: EMACRO ({ state, ... }: (compileFunc state { var = true; } func));
+      DEFUN_VAR = func:
+        EMACRO ({ state, ... }: (compileFunc state { var = true; } func)) // {
+          _retType = retType func;
+          _minArity = countArgs func - 1;
+        };
 
       # Corresponding lua code: if then (else?)
       # (expr -> stmts ->)* (fallback expr ->)? stmts
@@ -503,12 +517,15 @@ let
       # Corresponding lua code: local ... = ...
       # ((expr1 -> ... -> exprN) ->)* (expr1 -> ... -> exprN -> stmt) -> stmt
       LETREC = LMACRO ({ state, vars, ... }:
-        map
+        let
+          vars'' = map ({ value, name, ...}: RAW name) vars;
+          vars' = map ({ value, name, ... }: changeName (APPLY value vars'') name) vars;
+        in map
           ({ name, value }: {
             code = compileExpr
               (pushScope (length vars) state)
-              (APPLY value (map (var: changeName var.value var.name) vars));
-            expr = changeName value name;
+              (APPLY value vars');
+            expr = changeName (APPLY value vars') name;
             predef = true;
           })
           vars);

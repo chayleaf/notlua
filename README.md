@@ -42,7 +42,6 @@ file), and the statements to compile to lua.
 - `MCALL`: call a method (`table:method()`). First argument is the
   table, second is method name, other arguments are passed to the
   function.
-- `PCALL`: call a property (`table.method()`). Same arguments as `MCALL`
 - `SET`: sets something to something (the `=` statement). You can pass
   multiple values since Lua seems to support it.
 - `UNSAFE_SET`: same, but don't throw an error if type doesn't match

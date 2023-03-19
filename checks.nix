@@ -250,6 +250,22 @@ assert chk
     end
     print(m_var1(5))'';
 };
+assert !(builtins.tryEval (compileStmt defaultState (LETREC
+    (fib:
+      (n:
+        IF (LT n 2)
+          (RETURN n)
+          ELSE
+          (RETURN (ADD (fib (SUB n 1)) (fib (SUB n 2))))))
+    (fib: lua.stdlib.print (fib 5 6))))).success;
+assert !(builtins.tryEval (compileStmt defaultState (LETREC
+    (fib:
+      (n:
+        IF (LT n 2)
+          (RETURN n)
+          ELSE
+          (RETURN (ADD (fib (SUB n 1) 5) (fib (SUB n 2))))))
+    (fib: lua.stdlib.print (fib 5))))).success;
 assert eq (flake.keywords.MERGE { a = 1; } [ ]) { a = 1; };
 assert eq (flake.keywords.MERGE { a = 1; } [ 1 ]) { a = 1; __list = [ 1 ]; };
 assert eq (flake.keywords.MERGE { a = 1; __list = [ 1 ]; } [ 2 ]) { a = 1; __list = [ 1 2 ]; };
