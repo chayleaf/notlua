@@ -3,13 +3,13 @@
 Ever wanted to write Lua programs in... not Lua? Well, you're in the
 right place! Now you can also write them in Nix!
 
-features:
+Features:
 - TYPE SYSTEM (well, only those types that can be checked are checked)
 - it accidentally looks like lisp
 - first-class Neovim support
 - that's about it?
 
-limitations:
+Limitations:
 - poor error messages?
 - you lose currying compared to Nix (please don't try it, you're bound
   to fail)
@@ -19,13 +19,23 @@ Simple examples: see [checks](./checks.nix).
 Complex examples: see [my neovim
 config](https://github.com/chayleaf/dotfiles/blob/master/home/common/nvim.nix)
 
-To use this, add `notlua.nixosModules.default` to your config,
-and then access it via `config.notlua`.
+## Try it out
+
+Check out [sample.nix](./sample.nix) (you can run it with
+`./sample.nix` after cloning this repository). To immediately feed the
+compiled code to Lua, do `./sample.nix | lua` (assuming you have Lua
+in your `PATH` of course).
+
+To use this in your config, add `notlua.nixosModules.default` to your
+NixOS module list and then access it via `config.notlua`.
+
+## Overview
 
 `notlua.utils` contains various functions, out of which you should only
 really care about `compile`. It takes a module name (which will be used
 to prefix variables, so you can put multiple modules in a single .lua
-file), and the statements to compile to lua.
+file), and the statements to compile to lua. The other functions are
+internal functions mostly only useful for macro developers.
 
 `notlua.keywords` contains various keywords for writing the programs:
 
@@ -147,7 +157,6 @@ The bindings are type-aware and will not let you call a function with a
 wrong argument count or set a Vim option to a wrong type (or any
 other module's value, for that matter). That is, unless you use the
 unsafe versions of the methods.
-
 
 ## License
 

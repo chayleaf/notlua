@@ -163,6 +163,11 @@ let
           ${ident (compileStmt (pushScope argc state) res)}
           end'';
 
+      compileWrapExpr = state: expr:
+        let compiled = compileExpr state expr;
+        in if builtins.isAttrs expr && expr?__wrapSafe && expr.__wrapSafe == true then compiled
+        else wrapExpr compiled;
+
       compileExpr = state: expr:
         if isString expr then builtins.toJSON expr
         else if isInt expr || isFloat expr then toString expr
@@ -217,7 +222,7 @@ let
         inherit keywords utils;
       });
 
-    keywords = let inherit (utils) compileExpr compileFunc compileStmt; in rec {
+    keywords = let inherit (utils) compileExpr compileWrapExpr compileFunc compileStmt; in rec {
       # pass some raw code to lua directly
       # string -> expr
       RAW = name: { __kind = "raw"; _name = name; };
@@ -257,8 +262,9 @@ let
             "Unable to get property ${name} of a ${humanType expr}!";
           compileExpr state (UNSAFE_PROP expr name))
       // (if isAttrs expr && expr?_name && hasAttr name expr then getAttr name expr else { });
-      UNSAFE_PROP = expr: name: EMACRO ({ state, ... }:
-        "${wrapExpr (compileExpr state expr)}.${name}");
+      UNSAFE_PROP = expr: name: EMACRO
+        ({ state, ... }:
+          "${compileWrapExpr state expr}.${name}") // { __wrapSafe = true; };
 
       # Apply a list of arguments to a function/operator
       APPLY = foldl' applyVar;
@@ -285,7 +291,7 @@ let
         ) // { _type = null; };
       UNSAFE_CALL = func: EMACRO'
         ({ args, state, ... }:
-          "${wrapExpr (compileExpr state func)}(${catComma' (map (compileExpr state) args)})"
+          "${compileWrapExpr state func}(${catComma' (map (compileExpr state) args)})"
         ) // { _type = null; };
 
       # Call a method
@@ -301,7 +307,7 @@ let
         ) // { _type = null; };
       UNSAFE_MCALL = val: name: EMACRO'
         ({ args, state, ... }:
-          "${wrapExpr (compileExpr state val)}:${name}(${catComma' (map (compileExpr state) args)})"
+          "${compileWrapExpr state val}:${name}(${catComma' (map (compileExpr state) args)})"
         ) // { _type = null; };
 
       # corresponding lua code: a = b
@@ -335,7 +341,7 @@ let
           (types == [ ] || elem (humanType expr) types)
           ("Trying to apply `${op}` to an expression ${compileExpr state expr} of type ${humanType expr}! "
             + "If that's what you intended, try OP1 \"${op}\" <expr> instead.");
-        "${op}${wrapExpr (compileExpr state expr)}");
+        "${op}${compileWrapExpr state expr}");
 
       # The following operators have the signature
       # expr -> expr
@@ -356,7 +362,7 @@ let
             (types == [ ] || (all (lib.flip elem types) (map humanType args)))
             ("Trying to apply `${op}` to expressions ${catComma' (map (compileExpr state) args)} of types "
               + "${catComma' (map humanType args)}! If that's what you intended, try OP2 \"${op}\" <exprs> instead");
-          concatStringsSep " ${op} " (map (x: wrapExpr (compileExpr state x)) args))
+          concatStringsSep " ${op} " (map (compileWrapExpr state) args))
         arg1
         arg2;
 
@@ -505,8 +511,9 @@ let
           "Unable to get key ${compileExpr state key} of a ${humanType table} ${compileExpr state table}!";
         compileExpr state (UNSAFE_IDX table key));
 
-      UNSAFE_IDX = table: key: EMACRO ({ state, ... }:
-        "${wrapExpr (compileExpr state table)}[${compileExpr state key}]");
+      UNSAFE_IDX = table: key: EMACRO
+        ({ state, ... }:
+          "${compileWrapExpr state table}[${compileExpr state key}]") // { __wrapSafe = true; };
 
       # Creates variables and passes them to the function
       # Corresponding lua code: local ... = ...
