@@ -31,8 +31,8 @@ let
     in
     if type == null || !type?_type then raw
     else if type._type == "function" then type // {
-      __functor = self: self // (notlua.keywords.CALL self) // { _retType = retType val; };
-    } // (arities val) // raw
+      __functor = self: self // (notlua.keywords.CALL self);
+    } // raw
     else if type._type == "table" then (updateNames name val) // raw
     else type // raw;
 
@@ -46,7 +46,7 @@ let
     else if isPath val || isString val then { _type = "string"; }
     else if isInt val || isFloat val then { _type = "number"; }
     else if isNull val then { _type = "nil"; }
-    else if isFunction val then { _type = "function"; }
+    else if isFunction val then { _type = "function"; } // (arities val) // { _retType = retType val; }
     else if isBool val then { _type = "boolean"; }
     else null;
 
