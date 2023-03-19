@@ -169,7 +169,7 @@ let
         else if isBool expr then lib.boolToString expr
         else if isNull expr then "nil"
         else if isPath expr then compileExpr state (toString expr)
-        else if isFunction expr then (compileFunc state { } expr)
+        else if isFunction expr then compileFunc state { } expr
         else if isList expr then
           (if expr == [ ] then "{}" else ''
             {
@@ -524,17 +524,20 @@ let
       # ((expr1 -> ... -> exprN) ->)* (expr1 -> ... -> exprN -> stmt) -> stmt
       LETREC = LMACRO ({ state, vars, ... }:
         let
-          vars'' = map ({ value, name, ... }: RAW name) vars;
+          # this is just the raw names
+          vars''' = map ({ value, name, ... }: RAW name) vars;
+          # this has more well defined types
+          vars'' = map ({ value, name, ... }: changeName (APPLY value vars''') name) vars;
+          # and just to be sure, do one more pass in case the additional type info above helps
           vars' = map ({ value, name, ... }: changeName (APPLY value vars'') name) vars;
         in
         map
-          ({ name, value }: {
-            code = compileExpr
-              (pushScope (length vars) state)
-              (APPLY value vars');
-            expr = changeName (APPLY value vars') name;
-            predef = true;
-          })
+          ({ name, value }:
+            let val = APPLY value vars'; in {
+              code = compileExpr (pushScope (length vars) state) val;
+              expr = changeName val name;
+              predef = true;
+            })
           vars);
 
       # Process arbitrary code during compilation to be able to access state
