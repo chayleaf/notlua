@@ -43,7 +43,7 @@ let
     in
     if type == null || !type?_type then raw
     else if type._type == "function" then type // {
-      __functor = self: self // (notlua.keywords.CALL self);
+      __functor = notlua.keywords.CALL;
     } // raw
     else if type._type == "table" then (updateNames name val) // raw
     else type // raw;
@@ -58,17 +58,17 @@ let
     else if isPath val || isString val then { _type = "string"; }
     else if isInt val || isFloat val then { _type = "number"; }
     else if isNull val then { _type = "nil"; }
-    else if isFunction val then { _type = "function"; } // (arities val) // { _retType = retType val; }
+    else if isFunction val then { _type = "function"; } // (funcType val)
     else if isBool val then { _type = "boolean"; }
     else null;
 
-  arities = val:
-    if isFunction val then
+  funcType = val:
+    (if isFunction val then
       let argc = countArgs val;
       in { _minArity = argc; _maxArity = argc; }
-    else if !(isAttrs val) || !val?_minArity then null
+    else if !(isAttrs val) || !val?_minArity then { }
     else if val?_maxArity then { inherit (val) _minArity _maxArity; }
-    else { inherit (val) _minArity; };
+    else { inherit (val) _minArity; }) // { _retType = retType val; };
 
   retType = val:
     if isFunction val then let applied = applyVars null "" 1 val; in luaType applied.result
@@ -290,8 +290,8 @@ let
       # Useful if you need to call a zero argument function, or if you need to handle some weird metatable stuff
       # corresponding lua code: someFunc()
       # expr -> arg1 -> ... -> argN -> expr
-      CALL = func: EMACRO'
-        ({ _minArity ? null, _maxArity ? null, args, state, ... }:
+      CALL = func:
+        funcType func // (EMACRO' ({ _minArity ? null, _maxArity ? null, args, state, ... }:
           assert lib.assertMsg
             (!(elem (humanType func) [ "number" "boolean" "nil" "string" ]))
             ("Calling a ${humanType args} (${compileExpr state func}) might be a bad idea! "
@@ -305,11 +305,11 @@ let
               + (if _maxArity != null then "at most ${toString _maxArity}; " else "")
               + "found ${toString (length args)}");
           compileExpr state (APPLY (UNSAFE_CALL func) args)
-        ) // { _type = null; __wrapSafe = true; };
+        )) // { __wrapSafe = true; };
       UNSAFE_CALL = func: EMACRO'
         ({ args, state, ... }:
           "${compileWrapExpr state func}(${catComma' (map (compileExpr state) args)})"
-        ) // { _type = null; __wrapSafe = true; };
+        ) // { __wrapSafe = true; };
 
       # Call a method
       # corresponding lua code: someTable:someFunc()
@@ -321,7 +321,7 @@ let
             ("Calling a method of a ${humanType val} (${compileExpr state val}) might be a bad idea! "
               + "If you still want to do it, use UNSAFE_MCALL instead of MCALL");
           compileExpr state (APPLY (UNSAFE_MCALL val name) args)
-        ) // { _type = null; __wrapSafe = true; };
+        ) // { __wrapSafe = true; };
       UNSAFE_MCALL = val: name: EMACRO'
         ({ args, state, ... }:
           "${compileWrapExpr state val}:${name}(${catComma' (map (compileExpr state) args)})"
