@@ -40,7 +40,7 @@ let
     if isAttrs val && val?_retType then val._retType
     else if isAttrs val && val?_type && val._type == null then null
     else if isAttrs val && val?_type then
-      lib.filterAttrs (k: v: elem k [ "_retType" "_type" "_minArity" "_maxArity"]) val
+      lib.filterAttrs (k: v: elem k [ "_retType" "_type" "_minArity" "_maxArity" ]) val
     else if isAttrs val && val?__kind then null
     else if isList val || isAttrs val then { _type = "table"; }
     else if isPath val || isString val then { _type = "string"; }
@@ -51,8 +51,9 @@ let
     else null;
 
   arities = val:
-    if isFunction val then let argc = countArgs val;
-    in { _minArity = argc; _maxArity = argc; }
+    if isFunction val then
+      let argc = countArgs val;
+      in { _minArity = argc; _maxArity = argc; }
     else if !(isAttrs val) || !val?_minArity then null
     else if val?_maxArity then { inherit (val) _minArity _maxArity; }
     else { inherit (val) _minArity; };
@@ -249,11 +250,12 @@ let
       # Access a property
       # Corresponding lua code: table.property
       # expr -> string -> expr
-      PROP = expr: name: EMACRO ({ state, ... }:
-        assert lib.assertMsg
-          (checkType (luaType expr) (luaType { }))
-          "Unable to get property ${name} of a ${humanType expr}!";
-        compileExpr state (UNSAFE_PROP expr name))
+      PROP = expr: name: EMACRO
+        ({ state, ... }:
+          assert lib.assertMsg
+            (checkType (luaType expr) (luaType { }))
+            "Unable to get property ${name} of a ${humanType expr}!";
+          compileExpr state (UNSAFE_PROP expr name))
       // (if isAttrs expr && expr?_name && hasAttr name expr then getAttr name expr else { });
       UNSAFE_PROP = expr: name: EMACRO ({ state, ... }:
         "${wrapExpr (compileExpr state expr)}.${name}");
@@ -265,38 +267,42 @@ let
       # Useful if you need to call a zero argument function, or if you need to handle some weird metatable stuff
       # corresponding lua code: someFunc()
       # expr -> arg1 -> ... -> argN -> expr
-      CALL = func: EMACRO' ({ _minArity ? null, _maxArity ? null, args, state, ... }:
-        assert lib.assertMsg
-          (!(elem (humanType func) [ "number" "boolean" "nil" "string" ]))
-          ("Calling a ${humanType args} (${compileExpr state func}) might be a bad idea! "
-            + "If you still want to do it, use UNSAFE_CALL instead of CALL");
-        assert lib.assertMsg
-          ((_minArity == null || (length args) >= _minArity)
-            &&
-            (_maxArity == null || (length args) <= _maxArity))
-          ("error: wrong function arity for ${compileExpr state func}! "
-            + "expected at least ${toString _minArity}; "
-            + (if _maxArity != null then "at most ${toString _maxArity}; " else "")
-            + "found ${toString (length args)}");
-        compileExpr state (APPLY (UNSAFE_CALL func) args)
-      ) // { _type = null; };
-      UNSAFE_CALL = func: EMACRO' ({ args, state, ... }:
-        "${wrapExpr (compileExpr state func)}(${catComma' (map (compileExpr state) args)})"
-      ) // { _type = null; };
+      CALL = func: EMACRO'
+        ({ _minArity ? null, _maxArity ? null, args, state, ... }:
+          assert lib.assertMsg
+            (!(elem (humanType func) [ "number" "boolean" "nil" "string" ]))
+            ("Calling a ${humanType args} (${compileExpr state func}) might be a bad idea! "
+              + "If you still want to do it, use UNSAFE_CALL instead of CALL");
+          assert lib.assertMsg
+            ((_minArity == null || (length args) >= _minArity)
+              &&
+              (_maxArity == null || (length args) <= _maxArity))
+            ("error: wrong function arity for ${compileExpr state func}! "
+              + "expected at least ${toString _minArity}; "
+              + (if _maxArity != null then "at most ${toString _maxArity}; " else "")
+              + "found ${toString (length args)}");
+          compileExpr state (APPLY (UNSAFE_CALL func) args)
+        ) // { _type = null; };
+      UNSAFE_CALL = func: EMACRO'
+        ({ args, state, ... }:
+          "${wrapExpr (compileExpr state func)}(${catComma' (map (compileExpr state) args)})"
+        ) // { _type = null; };
 
       # Call a method
       # corresponding lua code: someTable:someFunc()
       # expr -> identifier -> arg1 -> ... -> argN -> expr
-      MCALL = val: name: EMACRO' ({ args, state, ... }:
-        assert lib.assertMsg
-          (elem (humanType val) [ null "unknown" "table" ])
-          ("Calling a method of a ${humanType val} (${compileExpr state val}) might be a bad idea! "
-            + "If you still want to do it, use UNSAFE_MCALL instead of MCALL");
-        compileExpr state (APPLY (UNSAFE_MCALL val name) args)
-      ) // { _type = null; };
-      UNSAFE_MCALL = val: name: EMACRO' ({ args, state, ... }:
-        "${wrapExpr (compileExpr state val)}:${name}(${catComma' (map (compileExpr state) args)})"
-      ) // { _type = null; };
+      MCALL = val: name: EMACRO'
+        ({ args, state, ... }:
+          assert lib.assertMsg
+            (elem (humanType val) [ null "unknown" "table" ])
+            ("Calling a method of a ${humanType val} (${compileExpr state val}) might be a bad idea! "
+              + "If you still want to do it, use UNSAFE_MCALL instead of MCALL");
+          compileExpr state (APPLY (UNSAFE_MCALL val name) args)
+        ) // { _type = null; };
+      UNSAFE_MCALL = val: name: EMACRO'
+        ({ args, state, ... }:
+          "${wrapExpr (compileExpr state val)}:${name}(${catComma' (map (compileExpr state) args)})"
+        ) // { _type = null; };
 
       # corresponding lua code: a = b
       # expr -> expr -> stmt
@@ -518,9 +524,10 @@ let
       # ((expr1 -> ... -> exprN) ->)* (expr1 -> ... -> exprN -> stmt) -> stmt
       LETREC = LMACRO ({ state, vars, ... }:
         let
-          vars'' = map ({ value, name, ...}: RAW name) vars;
+          vars'' = map ({ value, name, ... }: RAW name) vars;
           vars' = map ({ value, name, ... }: changeName (APPLY value vars'') name) vars;
-        in map
+        in
+        map
           ({ name, value }: {
             code = compileExpr
               (pushScope (length vars) state)
