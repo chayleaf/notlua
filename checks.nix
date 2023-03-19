@@ -1,8 +1,8 @@
-{ flake, lib }:
+{ flake, lib, pkgs }:
 let
   inherit (flake.utils) compileExpr compileStmt;
   inherit (flake.keywords) RAW PROP APPLY CALL MCALL SET OP2 AND ADD UNM FORIN RETURN DEFUN DEFUN_VAR IF ELSE IDX LET LETREC MACRO LT SUB;
-  nvim = flake.neovim { };
+  nvim = flake.neovim { plugins = [ pkgs.vimPlugins.nvim-cmp ]; };
   lua = flake.lua { };
   defaultState = { moduleName = "m"; scope = 1; };
   chk = { stmt ? null, expr ? null, raw }:
@@ -284,6 +284,21 @@ assert chk
 {
   expr = { };
   raw = "{}";
+};
+assert chk
+{
+  expr = nvim.stdlib.vim.inspect 5;
+  raw = "vim.inspect(5)";
+};
+assert chk
+{
+  expr = (nvim.keywords.REQ "cmp").mapping;
+  raw = "require(\"cmp\").config.mapping";
+};
+assert chk
+{
+  expr = (nvim.keywords.REQ "cmp").mapping.close;
+  raw = "require(\"cmp\").config.mapping.close";
 };
 assert chk
 {

@@ -12,7 +12,7 @@ let
     in
     (if builtins.isAttrs v && v?__kind__ then
       (if v.__kind__ == "rec" then
-        lib.attrByPath (lib.splitString "." v.path) null self
+        lib.attrByPath (lib.splitString "." v.__name__) null self
       else if v.__kind__ == "raw" && ((v.__type__ == "function") || (v?__meta__ && v.__meta__?__call)) then
         v' // {
           __functor = keywords.CALL;
@@ -64,10 +64,10 @@ let
           (EQ (type v) "table")
           (IF seen'
             (IF
-              (AND (NOT res') (NE seen' true))
+              (AND (OR (NOT res') (NOT (PROP res' "__kind__"))) (NE seen' true))
               (forceInitSetTable res' {
                 __kind__ = "rec";
-                path = seen';
+                __name__ = seen';
               }))
             ELSE [
             (initTable res')
@@ -99,13 +99,14 @@ let
     let
       pairs = CALL (RAW "pairs");
       tostring = CALL (RAW "tostring");
+      type = CALL (RAW "type");
     in
     (seen: dump1: dump2: t: path: res: [
       (SET (IDX seen t) path)
       (IF (NE path "") (SET path (CAT path ".")))
       (FORIN (pairs t) (k: v:
         let k' = tostring k; in
-        (IF (OR (NE path "") (NE k' "package")) (dump1 k' v path res))))
+        (IF (AND (OR (NE k' "__index") (NE (type v) "table")) (OR (NE path "") (NE k' "package"))) (dump1 k' v path res))))
     ]);
 
   dump12 = seen: LETREC (dump1 seen) (dump2 seen);

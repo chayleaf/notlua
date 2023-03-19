@@ -125,7 +125,7 @@ let
                       (IF (EQ (TYPE abbr) "string")
                         (initSetTable (IDX (PROP res key) abbr) {
                           __kind__ = "rec";
-                          path = CAT path key "." k;
+                          __name__ = CAT path key "." k;
                         }))
                     ];
                     init2 = key: __type__: [
@@ -136,7 +136,7 @@ let
                       (IF (EQ (TYPE abbr) "string")
                         (initSetTable (IDX (PROP (PROP res key) "__entry__") abbr) {
                           __kind__ = "rec";
-                          path = CAT path key ".__entry__." k;
+                          __name__ = CAT path key ".__entry__." k;
                         }))
                     ];
                     type' = IDX types type;
