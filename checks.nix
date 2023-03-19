@@ -245,7 +245,7 @@ assert chk
       if m_arg2 < 2 then
         return m_arg2
       else
-        return (m_var1(m_arg2 - 1)) + (m_var1(m_arg2 - 2))
+        return m_var1(m_arg2 - 1) + m_var1(m_arg2 - 2)
       end
     end
     print(m_var1(5))'';
@@ -282,6 +282,16 @@ assert chk
 {
   expr = { };
   raw = "{}";
+};
+assert chk
+{
+  expr = (IDX nvim.stdlib.vim.bo "test").binary;
+  raw = "vim.bo[\"test\"].binary";
+};
+assert chk
+{
+  expr = (IDX nvim.stdlib.vim.bo "test").bin;
+  raw = "vim.bo[\"test\"].binary";
 };
 assert chk
 {

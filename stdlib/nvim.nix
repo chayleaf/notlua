@@ -48,7 +48,7 @@ let
 
   dumpNvimGlobals =
     let
-      inherit (keywords) LET RAW CALL IF EQ IDX NOT AND ELSE PROP CAT FORIN OR LEN;
+      inherit (keywords) LET RAW CALL IF EQ IDX ELSE PROP CAT FORIN OR LEN;
       inherit (common) dump12 initSetTable;
       require = CALL (RAW "require");
       print = CALL (RAW "print");
@@ -94,39 +94,75 @@ let
                 })
             ))
             # dump options
-            ({ options, ... }: path: opt: res:
-              LET
+            ({ options, ... }: path: res: [
+              (initSetTable (PROP res "bo.__entry") {
+                __kind = "raw";
+                _type = "table";
+                _name = "";
+              })
+              (initSetTable (PROP res "wo.__entry") {
+                __kind = "raw";
+                _type = "table";
+                _name = "";
+              })
+              (LET
                 # types
                 { bool = "boolean"; string = "string"; number = "number"; }
                 # keyword tables (rather than lists)
                 # yep, it's hardcoded
                 { fillchars = true; listchars = true; winhighlight = true; }
 
-                (types: kwoptions: FORIN (pairs options) (k: { full_name, abbreviation, list, type, ... }:
+                (types: kwoptions: FORIN (pairs options) (k: { full_name, abbreviation, list, type, scope, ... }:
                   let
                     k = full_name;
                     abbr = abbreviation;
-                    init = _type: initSetTable (IDX res k) {
-                      __kind = "raw";
-                      _name = CAT path k;
-                      inherit _type;
-                    };
-                    checkAbbr =
-                      IF (EQ (TYPE abbr) "string")
-                        (initSetTable (IDX res abbr) {
+                    init = key: _type: [
+                      (initSetTable (IDX (PROP res key) k) {
+                        __kind = "raw";
+                        _name = CAT path key "." k;
+                        inherit _type;
+                      })
+                      (IF (EQ (TYPE abbr) "string")
+                        (initSetTable (IDX (PROP res key) abbr) {
                           __kind = "rec";
-                          path = CAT path k;
-                        });
+                          path = CAT path key "." k;
+                        }))
+                    ];
+                    init2 = key: _type: [
+                      (initSetTable (IDX (PROP (PROP res key) "__entry") k) {
+                        inherit _type;
+                        _name = k;
+                      })
+                      (IF (EQ (TYPE abbr) "string")
+                        (initSetTable (IDX (PROP (PROP res key) "__entry") abbr) {
+                          __kind = "rec";
+                          path = CAT path key ".__entry." k;
+                        }))
+                    ];
+                    type' = IDX types type;
                   in
-                  (IF
-                    (AND opt (OR (IDX kwoptions k) list)) [
-                    (init "table")
-                    checkAbbr
-                  ]
-                    (NOT opt) [
-                    (init (IDX types type))
-                    checkAbbr
-                  ]))))
+                  [
+                    (IF (OR (IDX kwoptions k) list) [
+                      (init "opt" "table")
+                      (init "opt_local" "table")
+                      (init "opt_global" "table")
+                    ]
+                      ELSE [
+                      (init "opt" type')
+                      (init "opt_local" type')
+                      (init "opt_global" type')
+                    ])
+                    (init "o" type')
+                    (FORIN (pairs scope) (k: v: [
+                      (IF (EQ v "global")
+                        (init "go" type'))
+                      (IF (EQ v "buffer")
+                        (init2 "bo" type'))
+                      (IF (EQ v "window")
+                        (init2 "wo" type'))
+                    ]))
+                  ])))
+            ])
             (dumpf: dumpo:
               let vim = PROP result "vim"; in [
                 (initSetTable vim {
@@ -146,8 +182,7 @@ let
                 (dump2 (IDX (RAW "package.loaded") "vim._editor") "vim" vim)
                 (dump2 (RAW "_G") "" result)
                 (dumpf (require "eval") "vim.fn." (PROP vim "fn"))
-                (dumpo (require "options") "vim.o." false (PROP vim "o"))
-                (dumpo (require "options") "vim.opt." true (PROP vim "opt"))
+                (dumpo (require "options") "vim." vim)
                 (print (CALL encode result))
               ]))
         ));

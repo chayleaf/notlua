@@ -13,6 +13,7 @@ let
   ident = code: identLines (lib.splitString "\n" code);
   identCat = lines: ident (catLines lines);
 
+  # maps a type definition tree, changing the base name to new_name
   updateNames = new_name: attrs:
     if attrs?_name then
       lib.mapAttrsRecursive
@@ -21,9 +22,20 @@ let
             new_name + (lib.removePrefix attrs._name value)
           else value)
         attrs
-    else
-      attrs;
+    else attrs;
 
+  # maps a type definition tree, making the values the properties of of_what
+  updateProps = of_what: attrs:
+    if attrs?_name then
+      let
+        attrs' = lib.filterAttrs (k: v: k != "_name") attrs;
+        prop = if attrs._name == "" then of_what else notlua.keywords.UNSAFE_PROP of_what attrs._name;
+      in
+      (builtins.mapAttrs (k: v: if isAttrs v then updateProps prop v else v) attrs')
+      // prop
+    else attrs;
+
+  # change the name of a value, copying its type
   changeName = val: name:
     let
       type = luaType val;
@@ -165,7 +177,8 @@ let
 
       compileWrapExpr = state: expr:
         let compiled = compileExpr state expr;
-        in if builtins.isAttrs expr && expr?__wrapSafe && expr.__wrapSafe == true then compiled
+        in if isAttrs expr && expr?__wrapSafe && expr.__wrapSafe == true then compiled
+        else if !(isAttrs expr) then compiled
         else wrapExpr compiled;
 
       compileExpr = state: expr:
@@ -261,10 +274,14 @@ let
             (checkType (luaType expr) (luaType { }))
             "Unable to get property ${name} of a ${humanType expr}!";
           compileExpr state (UNSAFE_PROP expr name))
-      // (if isAttrs expr && expr?_name && hasAttr name expr then getAttr name expr else { });
+      // (if isAttrs expr && expr?_name && hasAttr name expr then getAttr name expr else { })
+      // { __wrapSafe = true; };
+
       UNSAFE_PROP = expr: name: EMACRO
         ({ state, ... }:
-          "${compileWrapExpr state expr}.${name}") // { __wrapSafe = true; };
+          "${compileWrapExpr state expr}.${name}")
+      // (if isAttrs expr && expr?_name && hasAttr name expr then getAttr name expr else { })
+      // { __wrapSafe = true; };
 
       # Apply a list of arguments to a function/operator
       APPLY = foldl' applyVar;
@@ -288,11 +305,11 @@ let
               + (if _maxArity != null then "at most ${toString _maxArity}; " else "")
               + "found ${toString (length args)}");
           compileExpr state (APPLY (UNSAFE_CALL func) args)
-        ) // { _type = null; };
+        ) // { _type = null; __wrapSafe = true; };
       UNSAFE_CALL = func: EMACRO'
         ({ args, state, ... }:
           "${compileWrapExpr state func}(${catComma' (map (compileExpr state) args)})"
-        ) // { _type = null; };
+        ) // { _type = null; __wrapSafe = true; };
 
       # Call a method
       # corresponding lua code: someTable:someFunc()
@@ -304,11 +321,11 @@ let
             ("Calling a method of a ${humanType val} (${compileExpr state val}) might be a bad idea! "
               + "If you still want to do it, use UNSAFE_MCALL instead of MCALL");
           compileExpr state (APPLY (UNSAFE_MCALL val name) args)
-        ) // { _type = null; };
+        ) // { _type = null; __wrapSafe = true; };
       UNSAFE_MCALL = val: name: EMACRO'
         ({ args, state, ... }:
           "${compileWrapExpr state val}:${name}(${catComma' (map (compileExpr state) args)})"
-        ) // { _type = null; };
+        ) // { _type = null; __wrapSafe = true; };
 
       # corresponding lua code: a = b
       # expr -> expr -> stmt
@@ -359,7 +376,15 @@ let
       OP2 = op: arg1: arg2: EMACRO'
         ({ args, state, types ? [ ], ... }:
           assert lib.assertMsg
-            (types == [ ] || (all (lib.flip elem types) (map humanType args)))
+            (
+              types == [ ]
+              || (elem "match" types &&
+              (
+                let nonNullTypes = builtins.filter (x: x != null && x != "unknown") (map humanType args); in
+                length nonNullTypes == 0 || all (x: x == builtins.head nonNullTypes) nonNullTypes
+              ))
+              || (!(elem "match" types) && (all (lib.flip elem types) (map humanType args)))
+            )
             ("Trying to apply `${op}` to expressions ${catComma' (map (compileExpr state) args)} of types "
               + "${catComma' (map humanType args)}! If that's what you intended, try OP2 \"${op}\" <exprs> instead");
           concatStringsSep " ${op} " (map (compileWrapExpr state) args))
@@ -368,8 +393,8 @@ let
 
       # The following all have the signature
       # expr1 -> ... -> exprN -> expr
-      EQ = OP2' "boolean" null "==";
-      NE = OP2' "boolean" null "~=";
+      EQ = OP2' "boolean" [ "match" ] "==";
+      NE = OP2' "boolean" [ "match" ] "~=";
       GT = OP2' "boolean" [ "number" "string" "table" ] ">";
       LT = OP2' "boolean" [ "number" "string" "table" ] "<";
       GE = OP2' "boolean" [ "number" "string" "table" ] ">=";
@@ -396,7 +421,7 @@ let
         in
         ''
           for ${catComma varNames} in ${compileExpr state expr} do
-          ${ident (compileStmt (pushScope argc state) res.result)}
+          ${ident (compileStmt (pushScope argc' state) res.result)}
           end'');
 
       # expr -> (expr1 -> ... -> exprN -> stmts) -> stmts
@@ -505,15 +530,26 @@ let
 
       # Corresponding lua code: table[key]
       # table -> key -> expr
-      IDX = table: key: EMACRO ({ state, ... }:
-        assert lib.assertMsg
-          (checkType (luaType table) (luaType { }))
-          "Unable to get key ${compileExpr state key} of a ${humanType table} ${compileExpr state table}!";
-        compileExpr state (UNSAFE_IDX table key));
+      IDX = table: key:
+        let
+          self = EMACRO ({ state, ... }:
+            assert lib.assertMsg
+              (checkType (luaType table) (luaType { }))
+              "Unable to get key ${compileExpr state key} of a ${humanType table} ${compileExpr state table}!";
+            compileExpr state (UNSAFE_IDX table key));
+        in
+        self
+        // (if builtins.isAttrs table && table?__entry then updateProps self table.__entry else { })
+        // { __wrapSafe = true; };
 
-      UNSAFE_IDX = table: key: EMACRO
-        ({ state, ... }:
-          "${compileWrapExpr state table}[${compileExpr state key}]") // { __wrapSafe = true; };
+      UNSAFE_IDX = table: key:
+        let
+          self = EMACRO ({ state, ... }:
+            "${compileWrapExpr state table}[${compileExpr state key}]");
+        in
+        self
+        // (if builtins.isAttrs table && table?__entry then updateProps self table.__entry else { })
+        // { __wrapSafe = true; };
 
       # Creates variables and passes them to the function
       # Corresponding lua code: local ... = ...
