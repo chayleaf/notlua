@@ -291,24 +291,28 @@ let
       # Corresponding lua code: table.property
       # expr -> string -> expr
       PROP = expr: name:
-        let self = EMACRO
-          ({ __state__, ... }:
-            assert lib.assertMsg
-              ((isTypeOrHasMeta [ "table" ] "__index" expr)
-                || (isTypeOrHasMeta [ "table" ] "__newindex" expr))
-              "Unable to get property ${name} of a ${humanType expr}!";
-            compileExpr __state__ (UNSAFE_PROP expr name));
-        in self // (
+        let
+          self = EMACRO
+            ({ __state__, ... }:
+              assert lib.assertMsg
+                ((isTypeOrHasMeta [ "table" ] "__index" expr)
+                  || (isTypeOrHasMeta [ "table" ] "__newindex" expr))
+                "Unable to get property ${name} of a ${humanType expr}!";
+              compileExpr __state__ (UNSAFE_PROP expr name));
+        in
+        self // (
           if isAttrs expr && expr?__name__ && hasAttr name expr then getAttr name expr
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
         ) // { __wrapSafe__ = true; };
 
       UNSAFE_PROP = expr: name:
-        let self = EMACRO
-          ({ __state__, ... }:
-            "${compileWrapExpr __state__ expr}.${name}");
-        in self // (
+        let
+          self = EMACRO
+            ({ __state__, ... }:
+              "${compileWrapExpr __state__ expr}.${name}");
+        in
+        self // (
           if isAttrs expr && expr?__name__ && hasAttr name expr then getAttr name expr
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
@@ -380,13 +384,13 @@ let
 
       OP1' = type: typeCheck: op: expr:
         (OP1 op expr)
-        // (if typeCheck != null then { inherit typeCheck; } else { })
+        // (if typeCheck != null then { __typeCheck__ = typeCheck; } else { })
         // (if type != null then { __type__ = type; } else { });
 
       # opName -> expr -> expr
-      OP1 = op: expr: EMACRO ({ __state__, typeCheck ? null, ... }:
+      OP1 = op: expr: EMACRO ({ __state__, __typeCheck__ ? null, ... }:
         assert lib.assertMsg
-          (typeCheck == null || typeCheck expr)
+          (__typeCheck__ == null || __typeCheck__ expr)
           ("Trying to apply `${op}` to an expression ${compileExpr __state__ expr} of type ${humanType expr}! "
             + "If that's what you intended, try OP1 \"${op}\" <expr> instead.");
         "${op}${compileWrapExpr __state__ expr}");
@@ -400,14 +404,14 @@ let
 
       OP2' = type: typeCheck: op: arg1: arg2:
         (OP2 op arg1 arg2)
-        // (if typeCheck != null then { inherit typeCheck; } else { })
+        // (if typeCheck != null then { __typeCheck__ = typeCheck; } else { })
         // (if type != null then { __type__ = type; } else { });
 
       # opName -> expr1 -> ... -> exprN -> expr
       OP2 = op: arg1: arg2: EMACRO'
-        ({ __args__, __state__, typeCheck ? null, ... }:
+        ({ __args__, __state__, __typeCheck__ ? null, ... }:
           assert lib.assertMsg
-            (typeCheck == null || typeCheck __args__)
+            (__typeCheck__ == null || __typeCheck__ __args__)
             ("Trying to apply `${op}` to expressions ${catComma' (map (compileExpr __state__) __args__)} of types "
               + "${catComma' (map humanType __args__)}! If that's what you intended, try OP2 \"${op}\" <exprs> instead");
           concatStringsSep " ${op} " (map (compileWrapExpr __state__) __args__))
