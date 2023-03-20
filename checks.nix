@@ -1,7 +1,7 @@
 { flake, lib, pkgs }:
 let
   inherit (flake.utils) compileExpr compileStmt;
-  inherit (flake.keywords) RAW PROP APPLY CALL MCALL SET OP2 AND ADD UNM FORIN RETURN DEFUN DEFUN_VAR IF ELSE IDX LET LETREC MACRO LT SUB;
+  inherit (flake.keywords) RAW PROP APPLY CALL MCALL SET OP2 AND ADD OR UNM FORIN RETURN DEFUN DEFUN_VAR IF ELSE IDX LET LETREC MACRO LT SUB CAT;
   nvim = flake.neovim { plugins = [ pkgs.vimPlugins.nvim-cmp ]; };
   lua = flake.lua { };
   defaultState = { moduleName = "m"; scope = 1; };
@@ -174,6 +174,7 @@ assert chk
   '';
 };
 assert !(builtins.tryEval (compileExpr defaultState (ADD "" 5))).success;
+assert !(builtins.tryEval (compileExpr defaultState (ADD "" (ADD 4 5)))).success;
 assert !(builtins.tryEval (compileExpr defaultState (UNM ""))).success;
 assert !(builtins.tryEval (compileStmt defaultState (SET nvim.stdlib.vim.o.colorcolumn 17))).success;
 assert chk
@@ -328,6 +329,15 @@ assert chk
       arg
     end'';
 };
+assert eq (flake.utils.humanType (OR true null)) "boolean";
+assert eq (flake.utils.humanType (ADD 1 5)) "number";
+assert eq (flake.utils.humanType (CAT "" 5)) "string";
+assert eq (flake.utils.humanType (AND true null)) "nil";
+assert eq (flake.utils.humanType (AND null true)) "nil";
+assert eq (flake.utils.humanType (AND true false)) "boolean";
+assert eq (flake.utils.humanType (OR null true)) "boolean";
+assert eq (flake.utils.humanType (AND (AND true null) true)) "nil";
+assert eq (flake.utils.humanType (OR 5 6)) "number";
 {
   name = "flake-checks";
   type = "derivation";

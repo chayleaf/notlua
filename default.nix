@@ -83,6 +83,7 @@ let
 
   retType = val:
     if isFunction val then let applied = applyVars null "" 1 val; in luaType applied.result
+    else if isAttrs val && val?__retType__ then val.__retType__
     else if isAttrs val && val?__type__ && val.__type__ != "function" then luaType val
     else null;
 
@@ -111,6 +112,29 @@ let
 
   isTypeOrHasMeta = types: meta: expr:
     (elem (humanType expr) (types ++ [ "unknown" ])) || (isAttrs expr && expr?__meta__ && hasAttr meta expr.__meta__);
+
+  # check that no args contain the given meta key
+  noMeta = meta: expr: !(isAttrs expr) || !expr?__meta__ || !(hasAttr meta expr.__meta__);
+
+  noMeta' = meta: args:
+    all (noMeta meta) args;
+
+  typeIfNoMeta = type: meta: expr:
+    if noMeta meta expr then { __type__ = type; } else { };
+
+  typeIfNoMeta' = type: meta: args:
+    if noMeta' meta args then { __type__ = type; } else { };
+
+  canBeFalsy = expr: expr != true && elem (humanType expr) [ "unknown" "boolean" "nil" ];
+  canBeTruthy = expr: expr != false && (humanType expr == "unknown" || !(canBeFalsy expr));
+
+  intersectTypes = type1: type2:
+    if type1 == null || type2 == null then { }
+    else
+      (
+        let ret = lib.filterAttrs (k: v: hasAttr k type2 && v == getAttr k type2) type1;
+        in if ret != { } then ret else { }
+      );
 
   # The following functions may take state: moduleName and scope
   # scope is how many variables are currently in scope
@@ -385,7 +409,11 @@ let
       OP1' = type: typeCheck: op: expr:
         (OP1 op expr)
         // (if typeCheck != null then { __typeCheck__ = typeCheck; } else { })
-        // (if type != null then { __type__ = type; } else { });
+        // (
+          if isFunction type then type expr
+          else if type != null then { __type__ = type; }
+          else { }
+        );
 
       # opName -> expr -> expr
       OP1 = op: expr: EMACRO ({ __state__, __typeCheck__ ? null, ... }:
@@ -397,26 +425,35 @@ let
 
       # The following operators have the signature
       # expr -> expr
-      LEN = OP1' "number" (isTypeOrHasMeta [ "string" "table" ] "__len") "#";
+      LEN = OP1' (typeIfNoMeta "number" "__len") (isTypeOrHasMeta [ "string" "table" ] "__len") "#";
       NOT = OP1' "boolean" null "not ";
-      UNM = OP1' "number" (isTypeOrHasMeta [ "number" ] "__unm") "-";
-      BITNOT = OP1' "number" (isTypeOrHasMeta [ "number" ] "__bnot") "~";
+      UNM = OP1' (typeIfNoMeta "number" "__unm") (isTypeOrHasMeta [ "number" ] "__unm") "-";
+      BITNOT = OP1' (typeIfNoMeta "number" "__bnot") (isTypeOrHasMeta [ "number" ] "__bnot") "~";
 
       OP2' = type: typeCheck: op: arg1: arg2:
         (OP2 op arg1 arg2)
         // (if typeCheck != null then { __typeCheck__ = typeCheck; } else { })
-        // (if type != null then { __type__ = type; } else { });
+        // (
+          if type != null && isFunction type then
+            ({ __typeFn__ = type; } // (type [ arg1 arg2 ]))
+          else if type != null then { __type__ = type; }
+          else { }
+        );
 
       # opName -> expr1 -> ... -> exprN -> expr
-      OP2 = op: arg1: arg2: EMACRO'
+      OP2 = op: arg1: arg2: EMACRO
         ({ __args__, __state__, __typeCheck__ ? null, ... }:
           assert lib.assertMsg
             (__typeCheck__ == null || __typeCheck__ __args__)
             ("Trying to apply `${op}` to expressions ${catComma' (map (compileExpr __state__) __args__)} of types "
               + "${catComma' (map humanType __args__)}! If that's what you intended, try OP2 \"${op}\" <exprs> instead");
           concatStringsSep " ${op} " (map (compileWrapExpr __state__) __args__))
-        arg1
-        arg2;
+      // {
+        __args__ = [ arg1 arg2 ];
+        __functor = self: arg: self // {
+          __args__ = self.__args__ ++ [ arg ];
+        } // (if self?__typeFn__ then self.__typeFn__ (self.__args__ ++ [ arg ]) else { });
+      };
 
       # The following all have the signature
       # expr1 -> ... -> exprN -> expr
@@ -426,22 +463,44 @@ let
       GT = OP2' "boolean" (checkTypeAndMetaMatch "__lt") ">";
       LE = OP2' "boolean" (checkTypeAndMetaMatch "__le") "<=";
       GE = OP2' "boolean" (checkTypeAndMetaMatch "__le") ">=";
-      AND = OP2 "and";
-      OR = OP2 "or";
+      AND = OP2'
+        (args:
+          let
+            maybeTruthyCount = (lib.findFirst ({ i, x }: !(canBeTruthy x)) { i = length args; } (lib.imap0 (i: x: { inherit i x; }) args)).i;
+            maybeTruthy = if maybeTruthyCount == length args then lib.init args else lib.take maybeTruthyCount args;
+            maybeTruthy' = builtins.filter canBeFalsy maybeTruthy;
+            baseType = luaType (if maybeTruthyCount == length args then lib.last args else elemAt args maybeTruthyCount);
+            types = map luaType maybeTruthy';
+          in
+          builtins.foldl' intersectTypes baseType types
+        )
+        null "and";
+      OR = OP2'
+        (args:
+          let
+            maybeFalsyCount = (lib.findFirst ({ i, x }: !(canBeFalsy x)) { i = length args; } (lib.imap0 (i: x: { inherit i x; }) args)).i;
+            maybeFalsy = if maybeFalsyCount == length args then lib.init args else lib.take maybeFalsyCount args;
+            maybeFalsy' = builtins.filter canBeTruthy maybeFalsy;
+            baseType = luaType (if maybeFalsyCount == length args then lib.last args else elemAt args maybeFalsyCount);
+            types = map luaType maybeFalsy';
+          in
+          builtins.foldl' intersectTypes baseType types
+        )
+        null "or";
 
       CAT = OP2' "string" null "..";
-      ADD = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__add")) "+";
-      SUB = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__sub")) "-";
-      MUL = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__mul")) "*";
-      DIV = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__div")) "/";
-      IDIV = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__idiv")) "//";
-      MOD = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__mod")) "%";
-      POW = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__pow")) "^";
-      BITAND = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__band")) "&";
-      BITOR = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__bor")) "|";
-      BXOR = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__bxor")) "~";
-      SHL = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__shl")) "<<";
-      SHR = OP2' "number" (all (isTypeOrHasMeta [ "number" ] "__shr")) ">>";
+      ADD = OP2' (typeIfNoMeta' "number" "__add") (all (isTypeOrHasMeta [ "number" ] "__add")) "+";
+      SUB = OP2' (typeIfNoMeta' "number" "__sub") (all (isTypeOrHasMeta [ "number" ] "__sub")) "-";
+      MUL = OP2' (typeIfNoMeta' "number" "__mul") (all (isTypeOrHasMeta [ "number" ] "__mul")) "*";
+      DIV = OP2' (typeIfNoMeta' "number" "__div") (all (isTypeOrHasMeta [ "number" ] "__div")) "/";
+      IDIV = OP2' (typeIfNoMeta' "number" "__idiv") (all (isTypeOrHasMeta [ "number" ] "__idiv")) "//";
+      MOD = OP2' (typeIfNoMeta' "number" "__mod") (all (isTypeOrHasMeta [ "number" ] "__mod")) "%";
+      POW = OP2' (typeIfNoMeta' "number" "__pow") (all (isTypeOrHasMeta [ "number" ] "__pow")) "^";
+      BITAND = OP2' (typeIfNoMeta' "number" "__band") (all (isTypeOrHasMeta [ "number" ] "__band")) "&";
+      BITOR = OP2' (typeIfNoMeta' "number" "__bor") (all (isTypeOrHasMeta [ "number" ] "__bor")) "|";
+      BXOR = OP2' (typeIfNoMeta' "number" "__bxor") (all (isTypeOrHasMeta [ "number" ] "__bxor")) "~";
+      SHL = OP2' (typeIfNoMeta' "number" "__shl") (all (isTypeOrHasMeta [ "number" ] "__shl")) "<<";
+      SHR = OP2' (typeIfNoMeta' "number" "__shr") (all (isTypeOrHasMeta [ "number" ] "__shr")) ">>";
 
       # Corresponding lua code: for ... in ...
       # argc -> expr -> (expr1 -> ... -> exprN -> stmts) -> stmts

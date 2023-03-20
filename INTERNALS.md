@@ -7,28 +7,32 @@ and vararg macros (`EMACRO'`/`SMACRO'`). Regular macros take a function
 that takes an attrset with `__state__` (and potentially other values)
 and returns compiled code (potentially using `compileExpr` and
 `compileStmt`). Vararg macros additionally take a variable amount of
-arguments and pass them in `__args__`.
+arguments which get passed in `__args__`.
 
 There are also let macros `LMACRO`. They take a function that takes
 `__state__` and `__vars__` (and potentially other values). `__state__`
 is explained above, `__vars__` has a type `[{ name : string, value :
 expr }]`. The function must return `[{ code : string, expr : expr,
-local? : bool, predef?: bool }]`, where `code` is the raw code used to
+local? : bool, predef? : bool }]`, where `code` is the raw code used to
 initialize the variable, `expr` is whatever is returned to the user
 (could be simply `RAW var.name`, could be something else). `local` is an
 optional flag indicating the value should be local (defaults to true),
-`predef` means the value should be defined before *setting* every value
+`predef` means the value should be declared before *setting* every value
 (defaults to false).
 
 Each macro may have arbitrary data added to it by doing
 `macro // { ... }`. This way you can pass additional parameters to
-macros, or specify the type info (see below).
+macros, or specify the type info (see the below section).
 
 For example, Vararg macros are implemented as regular macros with
 `__functor` set to a function that extends `self.__args__` with the
 provided argument.
 
 ## Type info
+
+Types flow in one direction. After a value has been defined, its type
+can't become more specific - that would require complex type inference
+algorithms which are out of scope for this project.
 
 Each expression (including macros) might have the following attrs:
 - `__kind__` - either `raw` or `custom` (`raw` is used for importing
@@ -41,22 +45,27 @@ Each expression (including macros) might have the following attrs:
   to access the expression.
 - `__wrapSafe__` - the value doesn't need parens in any case (function
   calls, property and index accesses have this set)
-- `__type__` - the type of the result of the expression's evaluation
+- `__type__` - the Lua type of the result of the expression's evaluation
+  (A string - boolean, number, table, nil, function, etc)
 - `__meta__` - metatable
-- `__entry__` - for entries, specifies the entry type
-  - `__name__` must be set to an empty string, and subproperties should
-    have `__name__` set to just the property path in relation to the
-    entry (for example, if a table contains other tables with a subtable
-    named `x` which contains `y`, the type definitions could look like
-    this: `{..., __name__": "", "x": {..., "__name__": "x", "y": {...,
-    "__name__": "x.y"}}}` )
-- `__minArity__` - for functions, specifies min arity (arg count)
-- `__maxArity__` - for functions, specifies max arity (if this is set,
-  `__minArity__` must be set as well)
-- `__retType__` - for functions, specifies the return type
-- The other attrs are used for property access. This is the reason the
-  other attributes are surrounded with `__` - the names could clash
-  otherwise.
+- for functions:
+  - `__minArity__` - specifies min arity (arg count)
+  - `__maxArity__` - specifies max arity (if this is set,
+    `__minArity__` must be set as well)
+  - `__retType__` - specifies the return type
+- for tables:
+  - `__entry__` - specifies the default entry type
+    - `__name__` must be set to an empty string, and subproperties
+      must have `__name__` set to just the property path in relation
+      to the entry (for example, if a table contains other tables with a
+      subtable named `x` which contains `y`, the type definitions could
+      look like this: `{..., __name__": "", "x": {..., "__name__": "x",
+      "y": {..., "__name__": "x.y"}}}` )
+  - `__list__` - a special attribute indicating values from numeric
+    table keys.
+  - The other attrs are used for table property access. This is the
+    reason the other attributes are surrounded with `__` - the names
+    could clash otherwise.
 
 An expression's type is considered to be its attributes `__retType__`,
 `__type__`, `__minArity__`, `__maxArity__`, `__entry__`. For Nix
