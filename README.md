@@ -101,24 +101,12 @@ internal functions mostly only useful for macro developers.
   attrsets). If you do that, use `ATTR_PART` to get only the attrs of a
   table and `LIST_PART` to get only the list part.
 - `MACRO`, `MACRO'`: the entire compiler is built on macros! In fact,
-  the only keywords that aren't macros are `RAW` and `MACRO`.
-  Macros are functions that take transpiler state and return raw
-  compiled code. There are statement macros (`MACRO true`) and
-  expression macros (`MACRO false`). For convenience, `EMACRO` is
-  provided as an alias for `MACRO false`. (and `SMACRO` for `MACRO
-  true`). The macro is passed an attrset that includes, among other
-  things, `state`. If using `MACRO'` (`EMACRO'`, `SMACRO'`), the macro
-  will collect a variable amount of arguments which will be put into the
-  attrset as well (by key `args`).
-- `LMACRO`: short for "let macro". Let macros are custom functions for
-  letting the user create variables. Let macros take an attrset with
-  `state` and `vars`. `state` was mentioned above, but `vars` is a list
-  of attrsets with `name` and `value`. `name` is the variable name,
-  `value` is whatever user passed. The function must return
-  `{code, expr, local}` for each binding, where `code` is the compiled
-  code which the variable will be set to, `expr` is whatever the
-  user will receive in their callback, and `local` is whether the
-  variable has to be local.
+  the only keywords that aren't macros are `MACRO` (for obvious reasons)
+  and `RAW` (it could be a macro, but it's useful to keep for generating
+  type definitions). Macros are functions that take transpiler state and
+  return raw compiled code. There are also `LMACRO`s (short for "let
+  macro") for creating custom variants of `LET`. For more info on
+  macros, see [INTERNALS](./INTERNALS.md).
 - `state` currently has `moduleName` - a unique identifier to prefix
   your variables with, and `scope` - the amount of variables currently
   in scope. Whenever there are multiple statements in a block, a unique

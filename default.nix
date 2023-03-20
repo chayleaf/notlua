@@ -63,7 +63,7 @@ let
     if isAttrs val && val?__retType__ then val.__retType__
     else if isAttrs val && val?__type__ && val.__type__ == null then null
     else if isAttrs val && val?__type__ then
-      lib.filterAttrs (k: v: elem k [ "__retType__" "__type__" "__minArity__" "__maxArity__" ]) val
+      lib.filterAttrs (k: v: elem k [ "__retType__" "__type__" "__minArity__" "__maxArity__" "__entry__" ]) val
     else if isAttrs val && val?__kind__ then null
     else if isList val || isAttrs val then { __type__ = "table"; }
     else if isPath val || isString val then { __type__ = "string"; }
@@ -228,14 +228,14 @@ let
         else if expr.__kind__ == "raw" then
           expr.__name__
         else if expr.__kind__ == "custom" then
-          expr.__callback__ (expr // { self = expr; inherit state; })
+          expr.__callback__ (expr // { __self__ = expr; __state__ = state; })
         else throw "Invalid expression kind ${expr.__kind__}";
 
       compileStmt = state@{ scope, ... }: stmt:
         if isList stmt then
           catLines (lib.imap0 (i: compileStmt (pushName i state)) stmt)
         else if isAttrs stmt && stmt?__kind__ && stmt.__kind__ == "customStmt" then
-          stmt.__callback__ (stmt // { self = stmt; inherit state; })
+          stmt.__callback__ (stmt // { __self__ = stmt; __state__ = state; })
         else if isAttrs stmt && stmt?__kind__ && stmt.__kind__ == "rawStmt" then
           stmt.__name__
         else compileExpr state stmt;
@@ -290,21 +290,29 @@ let
       # Access a property
       # Corresponding lua code: table.property
       # expr -> string -> expr
-      PROP = expr: name: EMACRO
-        ({ state, ... }:
-          assert lib.assertMsg
-            ((isTypeOrHasMeta [ "table" ] "__index" expr)
-              || (isTypeOrHasMeta [ "table" ] "__newindex" expr))
-            "Unable to get property ${name} of a ${humanType expr}!";
-          compileExpr state (UNSAFE_PROP expr name))
-      // (if isAttrs expr && expr?__name__ && hasAttr name expr then getAttr name expr else { })
-      // { __wrapSafe__ = true; };
+      PROP = expr: name:
+        let self = EMACRO
+          ({ __state__, ... }:
+            assert lib.assertMsg
+              ((isTypeOrHasMeta [ "table" ] "__index" expr)
+                || (isTypeOrHasMeta [ "table" ] "__newindex" expr))
+              "Unable to get property ${name} of a ${humanType expr}!";
+            compileExpr __state__ (UNSAFE_PROP expr name));
+        in self // (
+          if isAttrs expr && expr?__name__ && hasAttr name expr then getAttr name expr
+          else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
+          else { }
+        ) // { __wrapSafe__ = true; };
 
-      UNSAFE_PROP = expr: name: EMACRO
-        ({ state, ... }:
-          "${compileWrapExpr state expr}.${name}")
-      // (if isAttrs expr && expr?__name__ && hasAttr name expr then getAttr name expr else { })
-      // { __wrapSafe__ = true; };
+      UNSAFE_PROP = expr: name:
+        let self = EMACRO
+          ({ __state__, ... }:
+            "${compileWrapExpr __state__ expr}.${name}");
+        in self // (
+          if isAttrs expr && expr?__name__ && hasAttr name expr then getAttr name expr
+          else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
+          else { }
+        ) // { __wrapSafe__ = true; };
 
       # Apply a list of arguments to a function/operator
       APPLY = foldl' applyVar;
@@ -314,59 +322,59 @@ let
       # corresponding lua code: someFunc()
       # expr -> arg1 -> ... -> argN -> expr
       CALL = func:
-        funcType func // (EMACRO' ({ __minArity__ ? null, __maxArity__ ? null, args, state, ... }:
+        funcType func // (EMACRO' ({ __minArity__ ? null, __maxArity__ ? null, __args__, __state__, ... }:
           assert lib.assertMsg
             (!(elem (humanType func) [ "number" "boolean" "nil" "string" ]))
-            ("Calling a ${humanType args} (${compileExpr state func}) might be a bad idea! "
+            ("Calling a ${humanType __args__} (${compileExpr __state__ func}) might be a bad idea! "
             + "If you still want to do it, use UNSAFE_CALL instead of CALL");
           assert lib.assertMsg
-            ((__minArity__ == null || (length args) >= __minArity__)
+            ((__minArity__ == null || (length __args__) >= __minArity__)
             &&
-            (__maxArity__ == null || (length args) <= __maxArity__))
-            ("error: wrong function arity for ${compileExpr state func}! "
+            (__maxArity__ == null || (length __args__) <= __maxArity__))
+            ("error: wrong function arity for ${compileExpr __state__ func}! "
             + "expected at least ${toString __minArity__}; "
             + (if __maxArity__ != null then "at most ${toString __maxArity__}; " else "")
-            + "found ${toString (length args)}");
-          compileExpr state (APPLY (UNSAFE_CALL func) args)
+            + "found ${toString (length __args__)}");
+          compileExpr __state__ (APPLY (UNSAFE_CALL func) __args__)
         )) // { __wrapSafe__ = true; };
       UNSAFE_CALL = func: EMACRO'
-        ({ args, state, ... }:
-          "${compileWrapExpr state func}(${catComma' (map (compileExpr state) args)})"
+        ({ __args__, __state__, ... }:
+          "${compileWrapExpr __state__ func}(${catComma' (map (compileExpr __state__) __args__)})"
         ) // { __wrapSafe__ = true; };
 
       # Call a method
       # corresponding lua code: someTable:someFunc()
       # expr -> identifier -> arg1 -> ... -> argN -> expr
       MCALL = val: name: EMACRO'
-        ({ args, state, ... }:
+        ({ __args__, __state__, ... }:
           assert lib.assertMsg
             (elem (humanType val) [ null "unknown" "table" ])
-            ("Calling a method of a ${humanType val} (${compileExpr state val}) might be a bad idea! "
+            ("Calling a method of a ${humanType val} (${compileExpr __state__ val}) might be a bad idea! "
               + "If you still want to do it, use UNSAFE_MCALL instead of MCALL");
-          compileExpr state (APPLY (UNSAFE_MCALL val name) args)
+          compileExpr __state__ (APPLY (UNSAFE_MCALL val name) __args__)
         ) // { __wrapSafe__ = true; };
       UNSAFE_MCALL = val: name: EMACRO'
-        ({ args, state, ... }:
-          "${compileWrapExpr state val}:${name}(${catComma' (map (compileExpr state) args)})"
+        ({ __args__, __state__, ... }:
+          "${compileWrapExpr __state__ val}:${name}(${catComma' (map (compileExpr __state__) __args__)})"
         ) // { __type__ = null; __wrapSafe__ = true; };
 
       # corresponding lua code: a = b
       # expr -> expr -> stmt
       SET = expr: val: SMACRO'
-        ({ args, state, ... }:
+        ({ __args__, __state__, ... }:
           assert lib.assertMsg
             (checkType (luaType expr) (luaType val))
-            "error: setting ${compileExpr state expr} to wrong type. It should be ${humanType expr} but is ${humanType val}";
-          compileStmt state (APPLY UNSAFE_SET args))
+            "error: setting ${compileExpr __state__ expr} to wrong type. It should be ${humanType expr} but is ${humanType val}";
+          compileStmt __state__ (APPLY UNSAFE_SET __args__))
         expr
         val;
       UNSAFE_SET = expr: val: SMACRO'
-        ({ args, state, ... }:
+        ({ __args__, __state__, ... }:
           let
-            target = builtins.head args;
-            vals = builtins.tail args;
+            target = builtins.head __args__;
+            vals = builtins.tail __args__;
           in
-          "${compileExpr state target} = ${catComma' (map (compileExpr state) vals)}")
+          "${compileExpr __state__ target} = ${catComma' (map (compileExpr __state__) vals)}")
         expr
         val;
 
@@ -376,12 +384,12 @@ let
         // (if type != null then { __type__ = type; } else { });
 
       # opName -> expr -> expr
-      OP1 = op: expr: EMACRO ({ state, typeCheck ? null, ... }:
+      OP1 = op: expr: EMACRO ({ __state__, typeCheck ? null, ... }:
         assert lib.assertMsg
           (typeCheck == null || typeCheck expr)
-          ("Trying to apply `${op}` to an expression ${compileExpr state expr} of type ${humanType expr}! "
+          ("Trying to apply `${op}` to an expression ${compileExpr __state__ expr} of type ${humanType expr}! "
             + "If that's what you intended, try OP1 \"${op}\" <expr> instead.");
-        "${op}${compileWrapExpr state expr}");
+        "${op}${compileWrapExpr __state__ expr}");
 
       # The following operators have the signature
       # expr -> expr
@@ -397,12 +405,12 @@ let
 
       # opName -> expr1 -> ... -> exprN -> expr
       OP2 = op: arg1: arg2: EMACRO'
-        ({ args, state, typeCheck ? null, ... }:
+        ({ __args__, __state__, typeCheck ? null, ... }:
           assert lib.assertMsg
-            (typeCheck == null || typeCheck args)
-            ("Trying to apply `${op}` to expressions ${catComma' (map (compileExpr state) args)} of types "
-              + "${catComma' (map humanType args)}! If that's what you intended, try OP2 \"${op}\" <exprs> instead");
-          concatStringsSep " ${op} " (map (compileWrapExpr state) args))
+            (typeCheck == null || typeCheck __args__)
+            ("Trying to apply `${op}` to expressions ${catComma' (map (compileExpr __state__) __args__)} of types "
+              + "${catComma' (map humanType __args__)}! If that's what you intended, try OP2 \"${op}\" <exprs> instead");
+          concatStringsSep " ${op} " (map (compileWrapExpr __state__) __args__))
         arg1
         arg2;
 
@@ -433,70 +441,70 @@ let
 
       # Corresponding lua code: for ... in ...
       # argc -> expr -> (expr1 -> ... -> exprN -> stmts) -> stmts
-      FORIN' = argc: expr: body: SMACRO ({ state, ... }:
+      FORIN' = argc: expr: body: SMACRO ({ __state__, ... }:
         let
-          prefix = genPrefix "_for" state;
-          res = applyVars argc prefix state.scope body;
+          prefix = genPrefix "_for" __state__;
+          res = applyVars argc prefix __state__.scope body;
           argc' = if argc != null then argc else res.argc;
-          varNames = genList (n: "${varName prefix (state.scope + n)}") argc';
+          varNames = genList (n: "${varName prefix (__state__.scope + n)}") argc';
         in
         ''
-          for ${catComma varNames} in ${compileExpr state expr} do
-          ${ident (compileStmt (pushScope argc' state) res.result)}
+          for ${catComma varNames} in ${compileExpr __state__ expr} do
+          ${ident (compileStmt (pushScope argc' __state__) res.result)}
           end'');
 
       # expr -> (expr1 -> ... -> exprN -> stmts) -> stmts
       FORIN = FORIN' null;
 
       FORRANGE = arg1: arg2: arg3: SMACRO'
-        ({ args, state, ... }:
+        ({ __args__, __state__, ... }:
           let
             vars =
               assert lib.assertMsg
-                (all (x: elem (humanType x) [ "unknown" "number" ]) args)
-                ("Error: trying to use FORRANGE on values of types ${catComma' (map humanType args)}! "
+                (all (x: elem (humanType x) [ "unknown" "number" ]) __args__)
+                ("Error: trying to use FORRANGE on values of types ${catComma' (map humanType __args__)}! "
                   + "Please don't do that.");
-              if length args == 3 || length args == 4 then
-                map (compileExpr state) (lib.init args)
+              if length __args__ == 3 || length __args__ == 4 then
+                map (compileExpr __state__) (lib.init __args__)
               else throw "for range can only receive 3 or 4 arguments";
-            body = lib.last args;
-            prefix = genPrefix "_nfor" state;
-            name = varName prefix state.scope;
+            body = lib.last __args__;
+            prefix = genPrefix "_nfor" __state__;
+            name = varName prefix __state__.scope;
           in
           ''
             for ${name} = ${catComma vars} do
-            ${ident (compileStmt (pushScope1 state) (body (RAW name)))}
+            ${ident (compileStmt (pushScope1 __state__) (body (RAW name)))}
             end''
         )
         arg1
         arg2
         arg3;
 
-      WHILE = cond: body: SMACRO ({ state, ... }: ''
-        while ${compileExpr state cond} do
-        ${ident (compileStmt state body)}
+      WHILE = cond: body: SMACRO ({ __state__, ... }: ''
+        while ${compileExpr __state__ cond} do
+        ${ident (compileStmt __state__ body)}
         end
       '');
 
-      REPEAT = body: cond: SMACRO ({ state, ... }: ''
+      REPEAT = body: cond: SMACRO ({ __state__, ... }: ''
         repeat
-        ${ident (compileStmt state body)}
-        until ${compileExpr state cond}
+        ${ident (compileStmt __state__ body)}
+        until ${compileExpr __state__ cond}
       '');
 
       # Issues a return statement
       # Corresponding lua code: return
       # expr -> stmt
-      RETURN = SMACRO' ({ args, state, ... }:
-        if args == [ ] then "return"
-        else "return ${catComma' (map (compileExpr state) args)}");
+      RETURN = SMACRO' ({ __args__, __state__, ... }:
+        if __args__ == [ ] then "return"
+        else "return ${catComma' (map (compileExpr __state__) __args__)}");
 
       BREAK = RAW' "break";
 
       # Creates a zero argument function with user-provided statements
       # stmts -> expr
       DEFUN = func:
-        EMACRO ({ state, ... }: (compileFunc state { } func)) // {
+        EMACRO ({ __state__, ... }: (compileFunc __state__ { } func)) // {
           __type__ = null;
           __retType__ = luaType func;
           __minArity__ = 0;
@@ -505,7 +513,7 @@ let
       # Creates a vararg functions (last argument will be the hidden `arg` lua variable)
       # stmts -> expr
       DEFUN_VAR = func:
-        EMACRO ({ state, ... }: (compileFunc state { var = true; } func)) // {
+        EMACRO ({ __state__, ... }: (compileFunc __state__ { var = true; } func)) // {
           __retType__ = retType func;
           __minArity__ = countArgs func - 1;
         };
@@ -513,17 +521,17 @@ let
       # Corresponding lua code: if then (else?)
       # (expr -> stmts ->)* (fallback expr ->)? stmts
       IF = expr: stmt: SMACRO'
-        ({ args, state, ... }:
+        ({ __args__, __state__, ... }:
           let
             data =
-              if length args / 2 * 2 != length args then {
-                branches = lib.init args;
-                fallback = lib.last args;
-              } else if elemAt args (length args - 2) == ELSE then {
-                branches = lib.take (length args - 2) args;
-                fallback = lib.last args;
+              if length __args__ / 2 * 2 != length __args__ then {
+                branches = lib.init __args__;
+                fallback = lib.last __args__;
+              } else if elemAt __args__ (length __args__ - 2) == ELSE then {
+                branches = lib.take (length __args__ - 2) __args__;
+                fallback = lib.last __args__;
               } else {
-                branches = args;
+                branches = __args__;
                 fallback = null;
               };
           in
@@ -531,14 +539,14 @@ let
             (lib.imap0
               (i: x:
                 if i / 2 * 2 == i then ''
-                  if ${compileExpr state x} then
+                  if ${compileExpr __state__ x} then
                 ''
                 else ''
-                  ${ident (compileStmt state x)}
+                  ${ident (compileStmt __state__ x)}
                   else'')
               data.branches)
           + (if data.fallback != null then
-            "\n${ident (compileStmt state data.fallback)}\n"
+            "\n${ident (compileStmt __state__ data.fallback)}\n"
           else "")))
           + "end"
         )
@@ -553,11 +561,12 @@ let
       # table -> key -> expr
       IDX = table: key:
         let
-          self = EMACRO ({ state, ... }:
+          self = EMACRO ({ __state__, ... }:
             assert lib.assertMsg
-              (checkType (luaType table) (luaType { }))
-              "Unable to get key ${compileExpr state key} of a ${humanType table} ${compileExpr state table}!";
-            compileExpr state (UNSAFE_IDX table key));
+              ((isTypeOrHasMeta [ "table" ] "__index" table)
+                || (isTypeOrHasMeta [ "table" ] "__newindex" table))
+              "Unable to get key ${compileExpr __state__ key} of a ${humanType table} ${compileExpr __state__ table}!";
+            compileExpr __state__ (UNSAFE_IDX table key));
         in
         self
         // (if builtins.isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
@@ -565,8 +574,8 @@ let
 
       UNSAFE_IDX = table: key:
         let
-          self = EMACRO ({ state, ... }:
-            "${compileWrapExpr state table}[${compileExpr state key}]");
+          self = EMACRO ({ __state__, ... }:
+            "${compileWrapExpr __state__ table}[${compileExpr __state__ key}]");
         in
         self
         // (if builtins.isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
@@ -575,34 +584,34 @@ let
       # Creates variables and passes them to the function
       # Corresponding lua code: local ... = ...
       # expr1 -> ... -> exprN -> (expr1 -> ... -> exprN -> stmt) -> stmt
-      LET = LMACRO ({ state, vars, ... }:
+      LET = LMACRO ({ __state__, __vars__, ... }:
         map
           ({ name, value, ... }: {
-            code = compileExpr state value;
+            code = compileExpr __state__ value;
             expr = changeName value name;
           })
-          vars);
+          __vars__);
 
       # Creates variables and passes them to the function as well as variable binding code
       # Corresponding lua code: local ... = ...
       # ((expr1 -> ... -> exprN) ->)* (expr1 -> ... -> exprN -> stmt) -> stmt
-      LETREC = LMACRO ({ state, vars, ... }:
+      LETREC = LMACRO ({ __state__, __vars__, ... }:
         let
           # this is just the raw names
-          vars''' = map ({ value, name, ... }: RAW name) vars;
+          vars''' = map ({ value, name, ... }: RAW name) __vars__;
           # this has more well defined types
-          vars'' = map ({ value, name, ... }: changeName (APPLY value vars''') name) vars;
+          vars'' = map ({ value, name, ... }: changeName (APPLY value vars''') name) __vars__;
           # and just to be sure, do one more pass in case the additional type info above helps
-          vars' = map ({ value, name, ... }: changeName (APPLY value vars'') name) vars;
+          vars' = map ({ value, name, ... }: changeName (APPLY value vars'') name) __vars__;
         in
         map
           ({ name, value }:
             let val = APPLY value vars'; in {
-              code = compileExpr (pushScope (length vars) state) val;
+              code = compileExpr (pushScope (length __vars__) __state__) val;
               expr = changeName val name;
               predef = true;
             })
-          vars);
+          __vars__);
 
       # Process arbitrary code during compilation to be able to access state
       # (state -> { result = (stmt|expr), state = new state }) -> (stmt|expr)
@@ -614,9 +623,9 @@ let
       EMACRO = MACRO false;
       # MACRO variant that passes a {args} argument
       MACRO' = stmt: callback: (MACRO stmt callback) // {
-        args = [ ];
+        __args__ = [ ];
         __functor = self: arg: self // {
-          args = self.args ++ [ arg ];
+          __args__ = self.__args__ ++ [ arg ];
         };
       };
       SMACRO' = MACRO' true;
@@ -625,8 +634,8 @@ let
       # Create custom "let" generators
       # binding processor is a function that receives
       # {
-      #   state = initial state before the let binding;
-      #   vars = a list of{
+      #   __state__ = initial __state__ before the let binding;
+      #   __vars__ = a list of{
       #     name (var name); value (whatever user passed to let);
       #   }
       # }
@@ -636,16 +645,15 @@ let
       #   expr = whatever data will be passed to the user;
       # }
       LMACRO = processor: arg1: arg2: SMACRO'
-        ({ args, state, ... }:
+        (attrs@{ __args__, __state__, ... }:
           let
-            func = lib.last args;
-            vals = lib.init args;
-            prefix = genPrefix "_var" state;
-            names = genList (i: varName prefix (state.scope + i)) (length vals);
-            values = processor {
-              inherit state;
-              vars = (lib.zipListsWith (name: value: { inherit name value; }) names vals);
-            };
+            func = lib.last __args__;
+            vals = lib.init __args__;
+            prefix = genPrefix "_var" __state__;
+            names = genList (i: varName prefix (__state__.scope + i)) (length vals);
+            values = processor (attrs // {
+              __vars__ = (lib.zipListsWith (name: value: { inherit name value; }) names vals);
+            });
             kvs = lib.zipListsWith (key: val: { inherit key val; }) names values;
             predefVars = builtins.filter ({ key, val }: val?predef && val.predef) kvs;
             predefs = catLines (map
@@ -660,7 +668,7 @@ let
             ) kvs)}
             ${
               compileStmt
-                (pushScope (length vals) state)
+                (pushScope (length vals) __state__)
                 (APPLY func (map (x: x.expr) values))
             }''
         )
