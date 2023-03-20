@@ -13,7 +13,11 @@ let
     (if builtins.isAttrs v && v?__kind__ then
       (if v.__kind__ == "rec" then
         lib.attrByPath (lib.splitString "." v.__name__) null self
-      else if v.__kind__ == "raw" && ((v.__type__ == "function") || (v?__meta__ && v.__meta__?__call)) then
+      else if v.__kind__ == "raw" && v?__meta__ && v.__meta__?__call then
+        v' // (utils.reduceArity 1 (utils.luaType v.__meta__.__call)) // {
+          __functor = keywords.CALL;
+        }
+      else if v.__kind__ == "raw" && v.__type__ == "function" then
         v' // {
           __functor = keywords.CALL;
         }

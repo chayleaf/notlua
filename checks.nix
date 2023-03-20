@@ -287,8 +287,8 @@ assert chk
 };
 assert chk
 {
-  expr = nvim.stdlib.vim.inspect 5;
-  raw = "vim.inspect(5)";
+  expr = nvim.stdlib.vim.inspect 5 { };
+  raw = "vim.inspect(5, {})";
 };
 assert chk
 {

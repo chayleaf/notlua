@@ -35,13 +35,24 @@ let
       // prop
     else attrs;
 
+  reduceArity = n: type:
+    if isAttrs type && type?__minArity__ && type?__maxArity__ && type.__minArity__ >= n then type // {
+      __minArity__ = type.__minArity__ - n;
+      __maxArity__ = type.__maxArity__ - n;
+    } else if isAttrs type && type?__minArity__ && type.__minArity >= n then type // {
+      __minArity__ = type.__minArity__ - n;
+    } else type;
+
   # change the name of a value, copying its type
   changeName = val: name:
     let
       type = luaType val;
       raw = notlua.keywords.RAW name;
     in
-    if type == null || !type?__type__ then raw
+    if isAttrs val && val?__meta__ && val.__meta__?__call then reduceArity 1 (luaType val.__meta__.__call) // {
+      __functor = notlua.keywords.CALL;
+    } // raw
+    else if type == null || !type?__type__ then raw
     else if type.__type__ == "function" then type // {
       __functor = notlua.keywords.CALL;
     } // raw
@@ -161,7 +172,7 @@ let
 
   notlua = rec {
     utils = rec {
-      inherit applyVar applyVars wrapKey wrapExpr varName pushName pushScope checkType luaType humanType ident;
+      inherit reduceArity applyVar applyVars wrapKey wrapExpr varName pushName pushScope checkType luaType humanType ident;
 
       # compile a function. First argument is state, second argument is function name, whether it's vararg,
       # and if it has a name, whether it should be local; third argument is function itself
