@@ -59,7 +59,7 @@ let
       (seen: result: { encode, ... }:
         (dump12 seen (dump1: dump2:
           LET
-            # dump functons
+            # dump functions
             ({ funcs, ... }: path: res: FORIN (pairs funcs) (k: { args, ... }:
               let
                 init = args: initSetTable (IDX res k) (args // {
