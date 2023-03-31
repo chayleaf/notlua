@@ -107,12 +107,6 @@ internal functions mostly only useful for macro developers.
   return raw compiled code. There are also `LMACRO`s (short for "let
   macro") for creating custom variants of `LET`. For more info on
   macros, see [INTERNALS](./INTERNALS.md).
-- `state` currently has `moduleName` - a unique identifier to prefix
-  your variables with, and `scope` - the amount of variables currently
-  in scope. Whenever there are multiple statements in a block, a unique
-  suffix gets added to `moduleName` for each statement to ensure var
-  names are kept unique.
-- For more ideas on how to use macros, check the code.
 
 Additionally, statement lists compile to one statement per line,
 expression lists and attrsets compile to tables. Functions compile to
