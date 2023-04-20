@@ -671,7 +671,7 @@ let
           vars''' = map ({ value, name, ... }: ERAW name) __vars__;
           # this has more well defined types
           vars'' = map ({ value, name, ... }: changeName (APPLY value vars''') name) __vars__;
-          # and just to be sure, do one more pass in case the additional type info above
+          # and do one more pass just to be sure, in case the additional type info above
           # helps reason about the types even better
           vars' = map ({ value, name, ... }: changeName (APPLY value vars'') name) __vars__;
         in
@@ -684,11 +684,14 @@ let
             })
           __vars__);
 
-      # Process arbitrary code during compilation to be able to access state
-      # state -> { result = stmt|expr, state = new state } -> (stmt&expr)
+      # Process arbitrary code during compilation
+      # (macroArgs -> string) -> stmt&expr
+      # macroArgs are the macro itself, unified with { __state__ } (compiler state)
+      # to pass additional parameters to macro, do (MACRO ... // params)
       MACRO = mkMacroKw "";
       SMACRO = mkMacroKw "Stmt";
       EMACRO = mkMacroKw "Expr";
+      # the following are vararg macros (same as above, but they also receive { __args__ })
       MACRO' = mkMacroKw' "";
       SMACRO' = mkMacroKw' "Stmt";
       EMACRO' = mkMacroKw' "Expr";
@@ -701,10 +704,11 @@ let
       #     name (var name); value (whatever user passed to let);
       #   }
       # }
+      # unified with the macro itself (like in MACRO)
       # and must return for each binding:
       # {
       #   code = raw code which the variables will be set to;
-      #   expr = whatever data will be passed to the user;
+      #   expr = whatever data will be passed to the user (may be enriched with type info/etc);
       # }
       LMACRO = processor: arg1: arg2: SMACRO'
         (attrs@{ __args__, __state__, ... }:
@@ -742,8 +746,13 @@ in
 {
   options = {
     notlua = lib.mkOption {
-      # type = lib.types.unspecified;
-      description = "NotLua functions. TODO: docs";
+      type = lib.mkOptionType {
+        name = "notlua";
+        description = "NotLua module";
+        check = builtins.isAttrs;
+      };
+      description = "NotLua module, not to be set by the user. See https://github.com/chayleaf/notlua for more info.";
+      default = notlua;
     };
   };
   config = {
