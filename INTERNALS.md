@@ -2,10 +2,11 @@
 
 ## Macros
 
-There are regular macros `EMACRO`/`SMACRO` (expression/statement macros)
-and vararg macros (`EMACRO'`/`SMACRO'`). Regular macros take a function
-that takes an attrset with `__state__` (and potentially other values)
-and returns compiled code (potentially using `compileExpr` and
+There are regular macros `EMACRO`/`SMACRO`/`MACRO`
+(expression/statement/expression+statement macros) and vararg macros
+(`EMACRO'`/`SMACRO'`/`MACRO'`). Regular macros take a function that
+takes an attrset with `__state__` (and potentially other values) and
+returns compiled code (potentially using `compileExpr` and
 `compileStmt`). Vararg macros additionally take a variable amount of
 arguments which get passed in `__args__`.
 
@@ -35,14 +36,14 @@ can't become more specific - that would require complex type inference
 algorithms which are out of scope for this project.
 
 Each expression (including macros) might have the following attrs:
-- `__kind__` - either `raw` or `custom` (`raw` is used for importing
-  typedefs, otherwise it'd be a macro too, `custom` is macros). If
+- `__kind__` - either `rawStdlib`, `custom`, `customStmt`, `customExpr`
+  (`rawStdlib` is used for importing typedefs, `custom` is macros). If
   `__kind__` isn't set, it's considered a normal table.
   - For JSON type definitions, a special value `rec` of `__kind__` is
-    allowed to specify the fact `__name__` recursively refers to another
-    entry in the JSON. In Nix, `rec` isn't allowed.
-- `__name__` - if `__kind__` is raw, then this contains the code needed
-  to access the expression.
+    allowed to specify the fact `__pathStdlib__` recursively refers to
+    another entry in the JSON. In Nix, `rec` isn't allowed.
+- `__pathStdlib__` - if `__kind__` is `rawStdlib`, then this contains
+  the code needed to access the expression.
 - `__wrapSafe__` - the value doesn't need parens in any case (function
   calls, property and index accesses have this set)
 - `__type__` - the Lua type of the result of the expression's evaluation
@@ -55,12 +56,13 @@ Each expression (including macros) might have the following attrs:
   - `__retType__` - specifies the return type
 - for tables:
   - `__entry__` - specifies the default entry type
-    - `__name__` must be set to an empty string, and subproperties
-      must have `__name__` set to just the property path in relation
-      to the entry (for example, if a table contains other tables with a
-      subtable named `x` which contains `y`, the type definitions could
-      look like this: `{..., __name__": "", "x": {..., "__name__": "x",
-      "y": {..., "__name__": "x.y"}}}` )
+    - `__pathStdlib__` must be set to an empty string, and subproperties
+      must have `__pathStdlib__` set to just the property path in
+      relation to the entry (for example, if a table contains other
+      tables with a subtable named `x` which contains `y`, the type
+      definitions could look like this: `{..., __pathStdlib__": "", "x":
+      {..., "__pathStdlib__": "x", "y": {..., "__pathStdlib__":
+      "x.y"}}}` )
   - `__list__` - a special attribute indicating values from numeric
     table keys.
   - The other attrs are used for table property access. This is the

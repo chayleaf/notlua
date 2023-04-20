@@ -12,18 +12,18 @@ let
     in
     (if builtins.isAttrs v && v?__kind__ then
       (if v.__kind__ == "rec" then
-        lib.attrByPath (lib.splitString "." v.__name__) null self
-      else if v.__kind__ == "raw" && v?__meta__ && v.__meta__?__call then
+        lib.attrByPath (lib.splitString "." v.__pathStdlib__) null self
+      else if v.__kind__ == "rawStdlib" && v?__meta__ && v.__meta__?__call then
         v' // (utils.reduceArity 1 (utils.luaType v.__meta__.__call)) // {
           __functor = keywords.CALL;
         }
-      else if v.__kind__ == "raw" && v.__type__ == "function" then
+      else if v.__kind__ == "rawStdlib" && v.__type__ == "function" then
         v' // {
           __functor = keywords.CALL;
         }
       else v'
       ) else if builtins.isAttrs v then v'
-    else if prefix != "" && k == "__name__" then
+    else if prefix != "" && k == "__pathStdlib__" then
       (if v == "" then prefix else "${prefix}.${v}")
     else v));
 
@@ -32,7 +32,7 @@ let
 
   stdlib = update stdlib "" typeDefs;
 
-  inherit (keywords) LET LETREC RAW CALL IF EQ NE IDX NOT AND SET ELSE PROP CAT FORIN OR;
+  inherit (keywords) LET LETREC ERAW CALL IF EQ NE IDX NOT AND SET ELSE PROP CAT FORIN OR;
 
   initTable = table: IF (NOT table) (SET table { });
   setTable = table: lib.mapAttrsToList (k1: v1: SET (PROP table k1) v1);
@@ -41,15 +41,15 @@ let
 
   dump1 =
     let
-      type = CALL (RAW "type");
-      debug-getinfo = CALL (RAW "debug.getinfo");
-      getmetatable = CALL (RAW "getmetatable");
+      type = CALL (ERAW "type");
+      debug-getinfo = CALL (ERAW "debug.getinfo");
+      getmetatable = CALL (ERAW "getmetatable");
     in
     (seen: dump1: dump2: k: v: path: res:
       let
         seen' = IDX seen v;
-        __kind__ = "raw";
-        __name__ = CAT path k;
+        __kind__ = "rawStdlib";
+        __pathStdlib__ = CAT path k;
         res' = IDX res k;
       in
       [
@@ -58,7 +58,7 @@ let
           (LET [ ] (getmetatable v) (keys: metatable: [
             (initTable res')
             (IF (EQ (type (PROP metatable "__index")) "table")
-              (dump2 (PROP metatable "__index") __name__ res'))
+              (dump2 (PROP metatable "__index") __pathStdlib__ res'))
             (setTable res' {
               __meta__ = { };
             })
@@ -71,20 +71,20 @@ let
               (AND (OR (NOT res') (NOT (PROP res' "__kind__"))) (NE seen' true))
               (forceInitSetTable res' {
                 __kind__ = "rec";
-                __name__ = seen';
+                __pathStdlib__ = seen';
               }))
             ELSE [
             (initTable res')
-            (dump2 v __name__ res')
+            (dump2 v __pathStdlib__ res')
             (setTable res' {
-              inherit __kind__ __name__;
+              inherit __kind__ __pathStdlib__;
               __type__ = "table";
             })
           ])
           (EQ (type v) "function")
           (LET (debug-getinfo v) ({ nparams, isvararg, ... }: [
             (initSetTable res' {
-              inherit __kind__ __name__;
+              inherit __kind__ __pathStdlib__;
               __type__ = "function";
               __minArity__ = nparams;
             })
@@ -94,16 +94,16 @@ let
           ]))
           ELSE
           (initSetTable res' {
-            inherit __kind__ __name__;
+            inherit __kind__ __pathStdlib__;
             __type__ = type v;
           }))
       ]);
 
   dump2 =
     let
-      pairs = CALL (RAW "pairs");
-      tostring = CALL (RAW "tostring");
-      type = CALL (RAW "type");
+      pairs = CALL (ERAW "pairs");
+      tostring = CALL (ERAW "tostring");
+      type = CALL (ERAW "type");
     in
     (seen: dump1: dump2: t: path: res: [
       (SET (IDX seen t) path)
@@ -117,8 +117,8 @@ let
 
   dumpLuaExpr =
     let
-      require = CALL (RAW "require");
-      print = CALL (RAW "print");
+      require = CALL (ERAW "require");
+      print = CALL (ERAW "print");
     in
     expr: LET { } { } (require "cjson") (seen: result: { encode, ... }:
       (dump12 seen (dump1: dump2: [

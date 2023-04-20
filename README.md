@@ -39,7 +39,8 @@ internal functions mostly only useful for macro developers.
 
 `notlua.keywords` contains various keywords for writing the programs:
 
-- `RAW <code>`: escape raw Lua code
+- `RAW <code>`: escape raw Lua code (Use `ERAW` or `SRAW` to hint that
+  it's a statement/expression)
 - `PROP <expression> <name>`: get a property of `<expression>` with a
   name `<name>` (must be a string)
 - `UNSAFE_PROP`: same, but don't throw an error if expression isn't a
@@ -101,12 +102,11 @@ internal functions mostly only useful for macro developers.
   attrsets). If you do that, use `ATTR_PART` to get only the attrs of a
   table and `LIST_PART` to get only the list part.
 - `MACRO`, `MACRO'`: the entire compiler is built on macros! In fact,
-  the only keywords that aren't macros are `MACRO` (for obvious reasons)
-  and `RAW` (it could be a macro, but it's useful to keep for generating
-  type definitions). Macros are functions that take transpiler state and
-  return raw compiled code. There are also `LMACRO`s (short for "let
-  macro") for creating custom variants of `LET`. For more info on
-  macros, see [INTERNALS](./INTERNALS.md).
+  the only keyword that isn't a macro is `MACRO` (for obvious reasons).
+  Macros are functions that take transpiler state and return raw
+  compiled code. There are also `LMACRO`s (short for "let macro") for
+  creating custom variants of `LET`. For more info on macros, see
+  [INTERNALS](./INTERNALS.md).
 
 Additionally, statement lists compile to one statement per line,
 expression lists and attrsets compile to tables. Functions compile to

@@ -1,7 +1,7 @@
 { flake, lib, pkgs }:
 let
   inherit (flake.utils) compileExpr compileStmt;
-  inherit (flake.keywords) RAW PROP APPLY CALL MCALL SET OP2 AND ADD OR UNM FORIN RETURN DEFUN DEFUN_VAR IF ELSE IDX LET LETREC MACRO LT SUB CAT;
+  inherit (flake.keywords) ERAW SRAW PROP APPLY CALL MCALL SET OP2 AND ADD OR UNM FORIN RETURN DEFUN DEFUN_VAR IF ELSE IDX LET LETREC MACRO LT SUB CAT;
   nvim = flake.neovim { plugins = [ pkgs.vimPlugins.nvim-cmp ]; };
   lua = flake.lua { };
   defaultState = { moduleName = "m"; scope = 1; };
@@ -43,7 +43,7 @@ assert chk
 };
 assert chk
 {
-  stmt = FORIN (RAW "test") (k: (v: CALL (RAW "print") k v));
+  stmt = FORIN (ERAW "test") (k: (v: CALL (ERAW "print") k v));
   raw = ''
     for m_for1,m_for2 in test do
       print(m_for1, m_for2)
@@ -59,17 +59,17 @@ assert chk
 };
 assert chk
 {
-  expr = RAW "test";
+  expr = ERAW "test";
   raw = "test";
 };
 assert chk
 {
-  expr = PROP (RAW "test") "prop";
+  expr = PROP (ERAW "test") "prop";
   raw = "test.prop";
 };
 assert chk
 {
-  expr = IDX (RAW "test") "prop";
+  expr = IDX (ERAW "test") "prop";
   raw = "test[\"prop\"]";
 };
 assert chk
@@ -84,12 +84,12 @@ assert chk
 };
 assert chk
 {
-  expr = CALL (RAW "test");
+  expr = CALL (ERAW "test");
   raw = "test()";
 };
 assert chk
 {
-  expr = CALL (RAW "test") [ 5 ] { test = 5; } 5 "5";
+  expr = CALL (ERAW "test") [ 5 ] { test = 5; } 5 "5";
   raw = ''
     test({
       5;
@@ -99,12 +99,12 @@ assert chk
 };
 assert chk
 {
-  expr = MCALL (RAW "test") "method";
+  expr = MCALL (ERAW "test") "method";
   raw = "test:method()";
 };
 assert chk
 {
-  expr = DEFUN (RAW "test");
+  expr = DEFUN (SRAW "test");
   raw = ''
     function()
       test
@@ -112,36 +112,36 @@ assert chk
 };
 assert chk
 {
-  stmt = SET (RAW "test") 5;
+  stmt = SET (ERAW "test") 5;
   raw = "test = 5";
 };
 assert chk
 {
-  stmt = IF (RAW "test") 5 (RAW "test2") 6 7;
+  stmt = IF (ERAW "test") (RETURN 5) (ERAW "test2") (RETURN 6) (RETURN 7);
   raw = ''
     if test then
-      5
+      return 5
     elseif test2 then
-      6
+      return 6
     else
-      7
+      return 7
     end'';
 };
 assert chk
 {
-  stmt = IF (RAW "test") 5 (RAW "test2") 6 ELSE 7;
+  stmt = IF (ERAW "test") (RETURN 5) (ERAW "test2") (RETURN 6) ELSE (RETURN 7);
   raw = ''
     if test then
-      5
+      return 5
     elseif test2 then
-      6
+      return 6
     else
-      7
+      return 7
     end'';
 };
 assert chk
 {
-  stmt = IF (AND true false) (CALL (RAW "print") "this shouldn't happen");
+  stmt = IF (AND true false) (CALL (ERAW "print") "this shouldn't happen");
   raw = ''
     if true and false then
       print("this shouldn't happen")
@@ -149,12 +149,11 @@ assert chk
 };
 assert chk
 {
-  stmt = LET (RAW "test") (RAW "test2") ({ test }: test2: [ test test2 ]);
+  stmt = LET (ERAW "test") (ERAW "test2") ({ test }: test2: [ (RETURN (ADD test test2)) ]);
   raw = ''
     local m_var1 = test
     local m_var2 = test2
-    m_var1.test
-    m_var2'';
+    return m_var1.test + m_var2'';
 };
 assert chk
 {
@@ -168,7 +167,7 @@ assert chk
 };
 assert chk
 {
-  stmt = MACRO true ({ ... }: "this will be lua in 1976\n");
+  stmt = MACRO ({ ... }: "this will be lua in 1976\n");
   raw = ''
     this will be lua in 1976
   '';
@@ -192,11 +191,11 @@ assert chk
 };
 assert chk
 {
-  expr = { key = { test }: test; };
+  expr = { key = { test }: RETURN test; };
   raw = ''
     {
       key = function(m_arg1)
-        m_arg1.test
+        return m_arg1.test
       end;
     }'';
 };
@@ -212,18 +211,18 @@ assert chk
 };
 assert chk
 {
-  stmt = LET (lua.keywords.REQ "cjson") (cjson: cjson.encode);
+  stmt = LET (lua.keywords.REQ "cjson") (cjson: RETURN cjson.encode);
   raw = ''
     local m_var1 = require("cjson")
-    m_var1.encode'';
+    return m_var1.encode'';
 };
 assert chk
 {
-  stmt = LET (lua.keywords.REQ' (PROP (lua.stdlib.require "cjson") "encode")) (lua.keywords.REQ' (lua.stdlib.require "cjson")) (encode: _: encode);
+  stmt = LET (lua.keywords.REQ' (PROP (lua.stdlib.require "cjson") "encode")) (lua.keywords.REQ' (lua.stdlib.require "cjson")) (encode: _: RETURN encode);
   raw = ''
     local m_var1 = require("cjson").encode
     local m_var2 = require("cjson")
-    m_var1'';
+    return m_var1'';
 };
 assert chk
 {
@@ -294,12 +293,12 @@ assert chk
 assert chk
 {
   expr = (nvim.keywords.REQ "cmp").mapping;
-  raw = "require(\"cmp\").config.mapping";
+  raw = "require(\"cmp\").mapping";
 };
 assert chk
 {
   expr = (nvim.keywords.REQ "cmp").mapping.close;
-  raw = "require(\"cmp\").config.mapping.close";
+  raw = "require(\"cmp\").mapping.close";
 };
 assert chk
 {
@@ -323,10 +322,10 @@ assert chk
 };
 assert chk
 {
-  expr = DEFUN_VAR (a: b: b);
+  expr = DEFUN_VAR (a: b: RETURN b);
   raw = ''
     function(m_arg1, ...)
-      arg
+      return arg
     end'';
 };
 assert eq (flake.utils.humanType (OR true null)) "boolean";

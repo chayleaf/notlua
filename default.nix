@@ -13,23 +13,24 @@ let
   ident = code: identLines (lib.splitString "\n" code);
   identCat = lines: ident (catLines lines);
 
+  # code for dealing with stdlib type mappings
   # maps a type definition tree, changing the base name to new_name
   updateNames = new_name: attrs:
-    if attrs?__name__ then
+    if attrs?__pathStdlib__ then
       lib.mapAttrsRecursive
         (path: value:
-          if lib.last path == "__name__" then
-            new_name + (lib.removePrefix attrs.__name__ value)
+          if lib.last path == "__pathStdlib__" then
+            new_name + (lib.removePrefix attrs.__pathStdlib__ value)
           else value)
         attrs
     else attrs;
 
   # maps a type definition tree, making the values the properties of of_what
   updateProps = of_what: attrs:
-    if attrs?__name__ then
+    if attrs?__pathStdlib__ then
       let
-        attrs' = lib.filterAttrs (k: v: k != "__name__") attrs;
-        prop = if attrs.__name__ == "" then of_what else notlua.keywords.UNSAFE_PROP of_what attrs.__name__;
+        attrs' = lib.filterAttrs (k: v: k != "__pathStdlib__") attrs;
+        prop = if attrs.__pathStdlib__ == "" then of_what else notlua.keywords.UNSAFE_PROP of_what attrs.__pathStdlib__;
       in
       (builtins.mapAttrs (k: v: if isAttrs v then updateProps prop v else v) attrs')
       // prop
@@ -47,7 +48,7 @@ let
   changeName = val: name:
     let
       type = luaType val;
-      raw = notlua.keywords.RAW name;
+      raw = notlua.keywords.ERAW name;
     in
     if isAttrs val && val?__meta__ && val.__meta__?__call then reduceArity 1 (luaType val.__meta__.__call) // {
       __functor = notlua.keywords.CALL;
@@ -136,6 +137,12 @@ let
         in if ret != { } then ret else { }
       );
 
+  mkMacroKw = suffix: callback: { __kind__ = "custom" + suffix; __callback__ = callback; };
+  mkMacroKw' = suffix: callback: (mkMacroKw suffix callback) // {
+    __args__ = [ ];
+    __functor = self: arg: self // { __args__ = self.__args__ ++ [ arg ]; };
+  };
+
   # The following functions may take state: moduleName and scope
   # scope is how many variables are currently in scope
   # the count is used for generating new variable names
@@ -188,7 +195,7 @@ let
       self = scope: func: argc:
         if count != null && scope == (origScope + count) then { result = func; }
         else if count == null && !(isFunction func) then { result = func; inherit argc; }
-        else self (scope + 1) (applyVar func (notlua.keywords.RAW (varName prefix scope))) (argc + 1);
+        else self (scope + 1) (applyVar func (notlua.keywords.ERAW (varName prefix scope))) (argc + 1);
     in
     self;
 
@@ -206,7 +213,7 @@ let
           res' = applyVars null prefix scope func;
           argc' = res'.argc;
           argc = if var then argc' - 1 else argc';
-          res = if var then (applyVars argc prefix scope func).result (keywords.RAW "arg") else res'.result;
+          res = if var then (applyVars argc prefix scope func).result (keywords.ERAW "arg") else res'.result;
           header =
             if name == "" then
               "function"
@@ -249,20 +256,18 @@ let
             + (if lists == [ ] then "" else "\n" + (identCat (map (x: compileExpr state x + ";") lists)))
             + (if attrs == { } then "" else "\n" + (identCat (lib.mapAttrsToList (k: v: "${wrapKey state k} = ${compileExpr state v};") attrs)))
             + "\n}")
-        else if expr.__kind__ == "raw" then
-          expr.__name__
-        else if expr.__kind__ == "custom" then
+        else if expr.__kind__ == "rawStdlib" then
+          expr.__pathStdlib__
+        else if expr.__kind__ == "customExpr" || expr.__kind__ == "custom" then
           expr.__callback__ (expr // { __self__ = expr; __state__ = state; })
         else throw "Invalid expression kind ${expr.__kind__}";
 
       compileStmt = state@{ scope, ... }: stmt:
         if isList stmt then
           catLines (lib.imap0 (i: compileStmt (pushName i state)) stmt)
-        else if isAttrs stmt && stmt?__kind__ && stmt.__kind__ == "customStmt" then
+        else if isAttrs stmt && stmt?__kind__ && (stmt.__kind__ == "customStmt" || stmt.__kind__ == "custom") then
           stmt.__callback__ (stmt // { __self__ = stmt; __state__ = state; })
-        else if isAttrs stmt && stmt?__kind__ && stmt.__kind__ == "rawStmt" then
-          stmt.__name__
-        else compileExpr state stmt;
+        else throw "Trying to use an expression of type ${humanType stmt} as a statement";
 
       # compile a module
       compile = moduleName: input: compileStmt { inherit moduleName; scope = 1; } input + "\n";
@@ -283,10 +288,12 @@ let
 
     keywords = let inherit (utils) compileExpr compileWrapExpr compileFunc compileStmt; in rec {
       # pass some raw code to lua directly
+      # string -> expr&stmt
+      RAW = code: MACRO (_: code);
       # string -> expr
-      RAW = name: { __kind__ = "raw"; __name__ = name; };
+      ERAW = code: EMACRO (_: code);
       # string -> stmt
-      RAW' = name: { __kind__ = "rawStmt"; __name__ = name; };
+      SRAW = code: SMACRO (_: code);
 
       LIST_PART = list:
         if isList list then list
@@ -325,7 +332,7 @@ let
               compileExpr __state__ (UNSAFE_PROP expr name));
         in
         self // (
-          if isAttrs expr && expr?__name__ && hasAttr name expr then getAttr name expr
+          if isAttrs expr && expr?__pathStdlib__ && hasAttr name expr then getAttr name expr
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
         ) // { __wrapSafe__ = true; };
@@ -337,7 +344,7 @@ let
               "${compileWrapExpr __state__ expr}.${name}");
         in
         self // (
-          if isAttrs expr && expr?__name__ && hasAttr name expr then getAttr name expr
+          if isAttrs expr && expr?__pathStdlib__ && hasAttr name expr then getAttr name expr
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
         ) // { __wrapSafe__ = true; };
@@ -348,9 +355,9 @@ let
       # Call something
       # Useful if you need to call a zero argument function, or if you need to handle some weird metatable stuff
       # corresponding lua code: someFunc()
-      # expr -> arg1 -> ... -> argN -> expr
+      # expr -> arg1 -> ... -> argN -> expr&stmt
       CALL = func:
-        funcType func // (EMACRO' ({ __minArity__ ? null, __maxArity__ ? null, __args__, __state__, ... }:
+        funcType func // (MACRO' ({ __minArity__ ? null, __maxArity__ ? null, __args__, __state__, ... }:
           assert lib.assertMsg
             (!(elem (humanType func) [ "number" "boolean" "nil" "string" ]))
             ("Calling a ${humanType __args__} (${compileExpr __state__ func}) might be a bad idea! "
@@ -365,15 +372,15 @@ let
             + "found ${toString (length __args__)}");
           compileExpr __state__ (APPLY (UNSAFE_CALL func) __args__)
         )) // { __wrapSafe__ = true; };
-      UNSAFE_CALL = func: EMACRO'
+      UNSAFE_CALL = func: MACRO'
         ({ __args__, __state__, ... }:
           "${compileWrapExpr __state__ func}(${catComma' (map (compileExpr __state__) __args__)})"
         ) // { __wrapSafe__ = true; };
 
       # Call a method
       # corresponding lua code: someTable:someFunc()
-      # expr -> identifier -> arg1 -> ... -> argN -> expr
-      MCALL = val: name: EMACRO'
+      # expr -> identifier -> arg1 -> ... -> argN -> expr&stmt
+      MCALL = val: name: MACRO'
         ({ __args__, __state__, ... }:
           assert lib.assertMsg
             (elem (humanType val) [ null "unknown" "table" ])
@@ -381,7 +388,7 @@ let
               + "If you still want to do it, use UNSAFE_MCALL instead of MCALL");
           compileExpr __state__ (APPLY (UNSAFE_MCALL val name) __args__)
         ) // { __wrapSafe__ = true; };
-      UNSAFE_MCALL = val: name: EMACRO'
+      UNSAFE_MCALL = val: name: MACRO'
         ({ __args__, __state__, ... }:
           "${compileWrapExpr __state__ val}:${name}(${catComma' (map (compileExpr __state__) __args__)})"
         ) // { __type__ = null; __wrapSafe__ = true; };
@@ -536,7 +543,7 @@ let
           in
           ''
             for ${name} = ${catComma vars} do
-            ${ident (compileStmt (pushScope1 __state__) (body (RAW name)))}
+            ${ident (compileStmt (pushScope1 __state__) (body (ERAW name)))}
             end''
         )
         arg1
@@ -562,7 +569,7 @@ let
         if __args__ == [ ] then "return"
         else "return ${catComma' (map (compileExpr __state__) __args__)}");
 
-      BREAK = RAW' "break";
+      BREAK = SRAW "break";
 
       # Creates a zero argument function with user-provided statements
       # stmts -> expr
@@ -661,10 +668,11 @@ let
       LETREC = LMACRO ({ __state__, __vars__, ... }:
         let
           # this is just the raw names
-          vars''' = map ({ value, name, ... }: RAW name) __vars__;
+          vars''' = map ({ value, name, ... }: ERAW name) __vars__;
           # this has more well defined types
           vars'' = map ({ value, name, ... }: changeName (APPLY value vars''') name) __vars__;
-          # and just to be sure, do one more pass in case the additional type info above helps
+          # and just to be sure, do one more pass in case the additional type info above
+          # helps reason about the types even better
           vars' = map ({ value, name, ... }: changeName (APPLY value vars'') name) __vars__;
         in
         map
@@ -677,22 +685,13 @@ let
           __vars__);
 
       # Process arbitrary code during compilation to be able to access state
-      # (state -> { result = (stmt|expr), state = new state }) -> (stmt|expr)
-      MACRO = isStmt: callback: {
-        __kind__ = if isStmt then "customStmt" else "custom";
-        __callback__ = callback;
-      };
-      SMACRO = MACRO true;
-      EMACRO = MACRO false;
-      # MACRO variant that passes a {args} argument
-      MACRO' = stmt: callback: (MACRO stmt callback) // {
-        __args__ = [ ];
-        __functor = self: arg: self // {
-          __args__ = self.__args__ ++ [ arg ];
-        };
-      };
-      SMACRO' = MACRO' true;
-      EMACRO' = MACRO' false;
+      # state -> { result = stmt|expr, state = new state } -> (stmt&expr)
+      MACRO = mkMacroKw "";
+      SMACRO = mkMacroKw "Stmt";
+      EMACRO = mkMacroKw "Expr";
+      MACRO' = mkMacroKw' "";
+      SMACRO' = mkMacroKw' "Stmt";
+      EMACRO' = mkMacroKw' "Expr";
 
       # Create custom "let" generators
       # binding processor is a function that receives

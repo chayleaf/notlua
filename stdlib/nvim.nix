@@ -1,6 +1,5 @@
 { lib
 , stdenvNoCC
-, substituteAll
 , neovimUtils
 , wrapNeovimUnstable
 , writeTextFile
@@ -48,12 +47,12 @@ let
 
   dumpNvimGlobals =
     let
-      inherit (keywords) LET RAW CALL IF EQ IDX ELSE PROP CAT FORIN OR LEN;
+      inherit (keywords) LET ERAW CALL IF EQ IDX ELSE PROP CAT FORIN OR LEN;
       inherit (common) dump12 initSetTable;
-      require = CALL (RAW "require");
-      print = CALL (RAW "print");
-      pairs = CALL (RAW "pairs");
-      TYPE = CALL (RAW "type");
+      require = CALL (ERAW "require");
+      print = CALL (ERAW "print");
+      pairs = CALL (ERAW "pairs");
+      TYPE = CALL (ERAW "type");
     in
     LET { } { } (require "cjson")
       (seen: result: { encode, ... }:
@@ -63,8 +62,8 @@ let
             ({ funcs, ... }: path: res: FORIN (pairs funcs) (k: { args, ... }:
               let
                 init = args: initSetTable (IDX res k) (args // {
-                  __kind__ = "raw";
-                  __name__ = CAT path k;
+                  __kind__ = "rawStdlib";
+                  __pathStdlib__ = CAT path k;
                   __type__ = "function";
                 });
               in
@@ -96,14 +95,14 @@ let
             # dump options
             ({ options, ... }: path: res: [
               (initSetTable (PROP res "bo.__entry__") {
-                __kind__ = "raw";
+                __kind__ = "rawStdlib";
                 __type__ = "table";
-                __name__ = "";
+                __pathStdlib__ = "";
               })
               (initSetTable (PROP res "wo.__entry__") {
-                __kind__ = "raw";
+                __kind__ = "rawStdlib";
                 __type__ = "table";
-                __name__ = "";
+                __pathStdlib__ = "";
               })
               (LET
                 # types
@@ -118,25 +117,25 @@ let
                     abbr = abbreviation;
                     init = key: __type__: [
                       (initSetTable (IDX (PROP res key) k) {
-                        __kind__ = "raw";
-                        __name__ = CAT path key "." k;
+                        __kind__ = "rawStdlib";
+                        __pathStdlib__ = CAT path key "." k;
                         inherit __type__;
                       })
                       (IF (EQ (TYPE abbr) "string")
                         (initSetTable (IDX (PROP res key) abbr) {
                           __kind__ = "rec";
-                          __name__ = CAT path key "." k;
+                          __pathStdlib__ = CAT path key "." k;
                         }))
                     ];
                     init2 = key: __type__: [
                       (initSetTable (IDX (PROP (PROP res key) "__entry__") k) {
                         inherit __type__;
-                        __name__ = k;
+                        __pathStdlib__ = k;
                       })
                       (IF (EQ (TYPE abbr) "string")
                         (initSetTable (IDX (PROP (PROP res key) "__entry__") abbr) {
                           __kind__ = "rec";
-                          __name__ = CAT path key ".__entry__." k;
+                          __pathStdlib__ = CAT path key ".__entry__." k;
                         }))
                     ];
                     type' = IDX types type;
@@ -166,21 +165,21 @@ let
             (dumpf: dumpo:
               let vim = PROP result "vim"; in [
                 (initSetTable vim {
-                  __kind__ = "raw";
+                  __kind__ = "rawStdlib";
                   __type__ = "table";
-                  __name__ = "vim";
+                  __pathStdlib__ = "vim";
                 })
-                (FORIN (pairs (RAW "vim._submodules")) (k: [
+                (FORIN (pairs (ERAW "vim._submodules")) (k: [
                   (initSetTable (IDX vim k) {
-                    __kind__ = "raw";
+                    __kind__ = "rawStdlib";
                     __type__ = "table";
-                    __name__ = CAT "vim." k;
+                    __pathStdlib__ = CAT "vim." k;
                   })
-                  (dump2 (IDX (RAW "vim") k) (CAT "vim." k) (IDX vim k))
+                  (dump2 (IDX (ERAW "vim") k) (CAT "vim." k) (IDX vim k))
                 ]))
-                (dump2 (IDX (RAW "package.loaded") "vim.shared") "vim" vim)
-                (dump2 (IDX (RAW "package.loaded") "vim._editor") "vim" vim)
-                (dump2 (RAW "_G") "" result)
+                (dump2 (IDX (ERAW "package.loaded") "vim.shared") "vim" vim)
+                (dump2 (IDX (ERAW "package.loaded") "vim._editor") "vim" vim)
+                (dump2 (ERAW "_G") "" result)
                 (dumpf (require "eval") "vim.fn." (PROP vim "fn"))
                 (dumpo (require "options") "vim." vim)
                 (print (CALL encode result))
@@ -206,7 +205,7 @@ let
     name = "neovim-types-${expr}.json";
     dumpProgram = writeTextFile {
       name = "dump-neovim-expr-${expr}.lua";
-      text = common.dumpLuaExpr (keywords.RAW expr);
+      text = common.dumpLuaExpr (keywords.ERAW expr);
     };
     nativeBuildInputs = [ pluginNeovim ];
     installPhase = ''

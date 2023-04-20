@@ -1,6 +1,5 @@
 { lib
 , stdenvNoCC
-, substituteAll
 , writeTextFile
 
 , keywords
@@ -21,7 +20,7 @@ let
     name = "lua-types.json";
     dumpProgram = writeTextFile {
       name = "dump-lua-expr.lua";
-      text = common.dumpLuaExpr (keywords.RAW "_G");
+      text = common.dumpLuaExpr (keywords.ERAW "_G");
     };
     nativeBuildInputs = [ lua' ];
     installPhase = ''
@@ -35,7 +34,7 @@ let
     name = "lua-types-${expr}.json";
     dumpProgram = writeTextFile {
       name = "dump-lua-expr-${expr}.lua";
-      text = common.dumpLuaExpr (keywords.RAW expr);
+      text = common.dumpLuaExpr (keywords.ERAW expr);
     };
     nativeBuildInputs = [ lua' ];
     installPhase = ''
