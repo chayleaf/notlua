@@ -230,7 +230,7 @@ let
 
       compileWrapExpr = state: expr:
         let compiled = compileExpr state expr;
-        in if isAttrs expr && expr?__wrapSafe__ && expr.__wrapSafe__ == true then compiled
+        in if isAttrs expr && ((expr?__wrapSafe__ && expr.__wrapSafe__ == true) || (expr?__validVar__ && expr.__validVar__)) then compiled
         else if !(isAttrs expr) then compiled
         else wrapExpr compiled;
 
@@ -291,7 +291,7 @@ let
       # string -> expr&stmt
       RAW = code: MACRO (_: code);
       # string -> expr
-      ERAW = code: EMACRO (_: code);
+      ERAW = code: EMACRO (_: code) // { __validVar__ = true; };
       # string -> stmt
       SRAW = code: SMACRO (_: code);
 
@@ -335,7 +335,8 @@ let
           if isAttrs expr && expr?__pathStdlib__ && hasAttr name expr then getAttr name expr
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
-        ) // { __wrapSafe__ = true; };
+        ) // { __wrapSafe__ = true; }
+        // (if isAttrs expr && expr?__validVar__ then { __validVar__ = expr.__validVar__; } else { });
 
       UNSAFE_PROP = expr: name:
         let
@@ -347,7 +348,8 @@ let
           if isAttrs expr && expr?__pathStdlib__ && hasAttr name expr then getAttr name expr
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
-        ) // { __wrapSafe__ = true; };
+        ) // { __wrapSafe__ = true; }
+        // (if isAttrs expr && expr?__validVar__ then { __validVar__ = expr.__validVar__; } else { });
 
       # Apply a list of arguments to a function/operator
       APPLY = foldl' applyVar;
@@ -397,20 +399,30 @@ let
       # expr -> expr -> stmt
       SET = expr: val: SMACRO'
         ({ __args__, __state__, ... }:
+          let
+            checkLhs = x:
+              assert lib.assertMsg
+                (isAttrs x && ((x?__validVar__ && x.__validVar__) || (x?__kind__ && x.__kind__ == "rawStdlib")))
+                "error: SET target must be a valid var, but it's a ${humanType x}";
+              x;
+          in
           assert lib.assertMsg
-            (checkType (luaType expr) (luaType val))
-            "error: setting ${compileExpr __state__ expr} to wrong type. It should be ${humanType expr} but is ${humanType val}";
-          compileStmt __state__ (APPLY UNSAFE_SET __args__))
-        expr
+            (if isList expr then all ({ fst, snd }: checkType (luaType fst) (luaType snd)) (lib.zipLists expr __args__)
+            else checkType (luaType expr) (if length __args__ > 1 then luaType __args__ else luaType val))
+            (if isList expr then
+              "error: setting ${catComma' (map (compileExpr __state__) expr)} to wrong types. They should be ${catComma' (map humanType expr)} but are ${catComma' (map humanType __args__)}" + (if length expr != length __args__ then " (length mismatch is allowed)" else "")
+            else
+              "error: setting ${compileExpr __state__ expr} to wrong type. It should be ${humanType expr} but is ${humanType val}");
+          compileStmt __state__ (APPLY (UNSAFE_SET (if isList expr then map checkLhs expr else checkLhs expr)) __args__))
         val;
       UNSAFE_SET = expr: val: SMACRO'
         ({ __args__, __state__, ... }:
           let
-            target = builtins.head __args__;
-            vals = builtins.tail __args__;
+            target =
+              if isList expr then catComma' (map (compileExpr __state__) expr)
+              else compileExpr __state__ expr;
           in
-          "${compileExpr __state__ target} = ${catComma' (map (compileExpr __state__) vals)}")
-        expr
+          "${target} = ${catComma' (map (compileExpr __state__) __args__)}")
         val;
 
       OP1' = type: typeCheck: op: expr:
@@ -640,7 +652,8 @@ let
         in
         self
         // (if builtins.isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
-        // { __wrapSafe__ = true; };
+        // { __wrapSafe__ = true; }
+        // (if isAttrs table && table?__validVar__ then { __validVar__ = table.__validVar__; } else { });
 
       UNSAFE_IDX = table: key:
         let
@@ -649,7 +662,8 @@ let
         in
         self
         // (if builtins.isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
-        // { __wrapSafe__ = true; };
+        // { __wrapSafe__ = true; }
+        // (if isAttrs table && table?__validVar__ then { __validVar__ = table.__validVar__; } else { });
 
       # Creates variables and passes them to the function
       # Corresponding lua code: local ... = ...

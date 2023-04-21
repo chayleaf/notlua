@@ -117,6 +117,34 @@ assert chk
 };
 assert chk
 {
+  stmt = let a = ERAW "a"; b = ERAW "b"; in SET [ a b ] b a;
+  raw = "a, b = b, a";
+};
+assert chk
+{
+  stmt = let a = ERAW "a"; b = ERAW "b"; in SET [ a b ] 1 2;
+  raw = "a, b = 1, 2";
+};
+assert chk
+{
+  stmt = LET 5 (five: SET five 6);
+  raw = ''
+    local m_var1 = 5
+    m_var1 = 6'';
+};
+assert chk
+{
+  stmt = LET 5 6 (five: six: SET [ five six ] 7 8);
+  raw = ''
+    local m_var1 = 5
+    local m_var2 = 6
+    m_var1, m_var2 = 7, 8'';
+};
+assert !(builtins.tryEval (compileStmt defaultState (LET 5 (five: SET five "a")))).success;
+assert !(builtins.tryEval (compileStmt defaultState (LET 5 6 (five: six: SET [ five six ] 7 "a")))).success;
+assert !(builtins.tryEval (compileStmt defaultState (SET 5 5))).success;
+assert chk
+{
   stmt = IF (ERAW "test") (RETURN 5) (ERAW "test2") (RETURN 6) (RETURN 7);
   raw = ''
     if test then

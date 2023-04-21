@@ -45,17 +45,23 @@ internal functions mostly only useful for macro developers.
   name `<name>` (must be a string)
 - `UNSAFE_PROP`: same, but don't throw an error if expression isn't a
   table
-- `CALL`: call a function. Arguments are variadic, i.e. if you want to
-  call `print(1, 2)` you do `CALL print 1 2`.
+- `CALL <expr> [<exprs>...]`: call a function. Arguments are variadic,
+  i.e. if you want to call `print(1, 2)` you do `CALL print 1 2`.
 - `UNSAFE_CALL`: same, but don't check function arity (argument count)
 - `APPLY`: apply a list of arguments to a function (so you can do `APPLY
   (CALL print) [1 2]`)
 - `MCALL`: call a method (`table:method()`). First argument is the
   table, second is method name, other arguments are passed to the
   function.
-- `SET`: sets something to something (the `=` statement). You can pass
-  multiple values since Lua seems to support it.
-- `UNSAFE_SET`: same, but don't throw an error if type doesn't match
+- `SET <var/vars> <exprs...>`: sets something to something (the `=`
+  statement). You can pass multiple values:
+  - to assign to multiple lhs (`a, b = c`), use a list as lhs
+    (`SET [a b] c`)
+  - to assign multiple rhs (`a = b, c`), pass the rhs as varargs
+    (`SET a b c`)
+  - you can combine them (`a, b = b, a` -> `SET [a b] b a`)
+- `UNSAFE_SET`: same, but don't throw an error if type doesn't match or
+  if lhs isn't a valid lhs
 - `LEN`: length operator
 - `NOT`: not operator
 - `UNM`: unary minus
