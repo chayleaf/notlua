@@ -74,6 +74,10 @@ let
     else if isBool val then { __type__ = "boolean"; }
     else null;
 
+  # check whether something is a valid "var" as per lua spec
+  validVar = x:
+    isAttrs x && ((x?__validVar__ && x.__validVar__) || (x?__kind__ && x.__kind__ == "rawStdlib"));
+
   funcType = val:
     (if isFunction val then
       let argc = countArgs val;
@@ -229,9 +233,12 @@ let
           end'';
 
       compileWrapExpr = state: expr:
-        let compiled = compileExpr state expr;
-        in if isAttrs expr && ((expr?__wrapSafe__ && expr.__wrapSafe__ == true) || (expr?__validVar__ && expr.__validVar__)) then compiled
-        else if !(isAttrs expr) then compiled
+        let compiled = compileExpr state expr; in
+        if
+          (isAttrs expr && expr?__wrapSafe__ && expr.__wrapSafe__ == true)
+          || !(isAttrs expr)
+          || validVar expr
+        then compiled
         else wrapExpr compiled;
 
       compileExpr = state: expr:
@@ -336,7 +343,7 @@ let
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
         ) // { __wrapSafe__ = true; }
-        // (if isAttrs expr && expr?__validVar__ then { __validVar__ = expr.__validVar__; } else { });
+        // (if isAttrs expr && validVar expr then { __validVar__ = true; } else { });
 
       UNSAFE_PROP = expr: name:
         let
@@ -349,7 +356,7 @@ let
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
         ) // { __wrapSafe__ = true; }
-        // (if isAttrs expr && expr?__validVar__ then { __validVar__ = expr.__validVar__; } else { });
+        // (if isAttrs expr && validVar expr then { __validVar__ = true; } else { });
 
       # Apply a list of arguments to a function/operator
       APPLY = foldl' applyVar;
@@ -402,7 +409,7 @@ let
           let
             checkLhs = x:
               assert lib.assertMsg
-                (isAttrs x && ((x?__validVar__ && x.__validVar__) || (x?__kind__ && x.__kind__ == "rawStdlib")))
+                (validVar x)
                 "error: SET target must be a valid var, but it's a ${humanType x}";
               x;
           in
@@ -653,7 +660,7 @@ let
         self
         // (if builtins.isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
         // { __wrapSafe__ = true; }
-        // (if isAttrs table && table?__validVar__ then { __validVar__ = table.__validVar__; } else { });
+        // (if isAttrs table && validVar table then { __validVar__ = true; } else { });
 
       UNSAFE_IDX = table: key:
         let
@@ -663,7 +670,7 @@ let
         self
         // (if builtins.isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
         // { __wrapSafe__ = true; }
-        // (if isAttrs table && table?__validVar__ then { __validVar__ = table.__validVar__; } else { });
+        // (if isAttrs table && validVar table then { __validVar__ = true; } else { });
 
       # Creates variables and passes them to the function
       # Corresponding lua code: local ... = ...
