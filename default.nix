@@ -336,27 +336,27 @@ let
                 ((isTypeOrHasMeta [ "table" ] "__index" expr)
                   || (isTypeOrHasMeta [ "table" ] "__newindex" expr))
                 "Unable to get property ${name} of a ${humanType expr}!";
-              compileExpr __state__ (UNSAFE_PROP expr name));
+              compileExpr __state__ (UNSAFE_PROP expr name))
+          // (if validVar expr then { __validVar__ = true; } else { });
         in
         self // (
           if isAttrs expr && expr?__pathStdlib__ && hasAttr name expr then getAttr name expr
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
-        ) // { __wrapSafe__ = true; }
-        // (if isAttrs expr && validVar expr then { __validVar__ = true; } else { });
+        ) // { __wrapSafe__ = true; };
 
       UNSAFE_PROP = expr: name:
         let
           self = EMACRO
             ({ __state__, ... }:
-              "${compileWrapExpr __state__ expr}.${name}");
+              "${compileWrapExpr __state__ expr}.${name}")
+          // (if validVar expr then { __validVar__ = true; } else { });
         in
         self // (
           if isAttrs expr && expr?__pathStdlib__ && hasAttr name expr then getAttr name expr
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
-        ) // { __wrapSafe__ = true; }
-        // (if isAttrs expr && validVar expr then { __validVar__ = true; } else { });
+        ) // { __wrapSafe__ = true; };
 
       # Apply a list of arguments to a function/operator
       APPLY = foldl' applyVar;
@@ -655,22 +655,22 @@ let
               ((isTypeOrHasMeta [ "table" ] "__index" table)
                 || (isTypeOrHasMeta [ "table" ] "__newindex" table))
               "Unable to get key ${compileExpr __state__ key} of a ${humanType table} ${compileExpr __state__ table}!";
-            compileExpr __state__ (UNSAFE_IDX table key));
+            compileExpr __state__ (UNSAFE_IDX table key))
+          // (if validVar table then { __validVar__ = true; } else { });
         in
         self
-        // (if builtins.isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
-        // { __wrapSafe__ = true; }
-        // (if isAttrs table && validVar table then { __validVar__ = true; } else { });
+        // ( (if isAttrs table && table?__entry__ then updateProps self table.__entry__ else { }))
+        // { __wrapSafe__ = true; };
 
       UNSAFE_IDX = table: key:
         let
           self = EMACRO ({ __state__, ... }:
-            "${compileWrapExpr __state__ table}[${compileExpr __state__ key}]");
+            "${compileWrapExpr __state__ table}[${compileExpr __state__ key}]")
+          // (if validVar table then { __validVar__ = true; } else { });
         in
         self
         // (if builtins.isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
-        // { __wrapSafe__ = true; }
-        // (if isAttrs table && validVar table then { __validVar__ = true; } else { });
+        // { __wrapSafe__ = true; };
 
       # Creates variables and passes them to the function
       # Corresponding lua code: local ... = ...
