@@ -44,15 +44,15 @@ Each expression (including macros) might have the following attrs:
     another entry in the JSON. In Nix, `rec` isn't allowed.
 - `__pathStdlib__` - if `__kind__` is `rawStdlib`, then this contains
   the code needed to access the expression.
-- `__validVar__` - the value is a valid var (i.e. can be assigned to via
-  `lhs = rhs` statement). Additionally, expressions with
-  `__kind__ = "rawStdlib"` are always considered valid vars since they
+- `__validVar__` - the value is a valid `var` (i.e. can be assigned to
+  via `lhs = rhs` statement). Additionally, expressions with
+  `__kind__ = "rawStdlib"` are always considered valid `var`s since they
   currently can't be results of function calls, only property and index
   accesses.
 - `__prefixExp__` - the value is a `prefixexp` as per Lua reference
-  (Function call or a var)
+  (valid `var`s also count as valid `prefixexp`s)
 - `__wrapSafe__` - the expr doesn't need parens when used with binary
-  operators (`prefixexp`s also dont get wrapped with parents)
+  operators (`prefixexp`s also dont get wrapped with parens)
 - `__type__` - the Lua type of the result of the expression's evaluation
   (A string - boolean, number, table, nil, function, etc)
 - `__meta__` - metatable
