@@ -326,12 +326,12 @@ assert chk
 assert chk
 {
   expr = (nvim.keywords.REQ "cmp").mapping;
-  raw = "require(\"cmp\").mapping";
+  raw = "require(\"cmp\").config.mapping";
 };
 assert chk
 {
   expr = (nvim.keywords.REQ "cmp").mapping.close;
-  raw = "require(\"cmp\").mapping.close";
+  raw = "require(\"cmp\").config.mapping.close";
 };
 assert chk
 {
@@ -358,7 +358,7 @@ assert chk
   expr = DEFUN_VAR (a: b: RETURN b);
   raw = ''
     function(m_arg1, ...)
-      return arg
+      return ...
     end'';
 };
 assert eq (flake.utils.humanType (OR true null)) "boolean";

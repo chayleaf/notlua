@@ -157,17 +157,8 @@ let
   pushName = suffix: state@{ moduleName, ... }: state // { moduleName = moduleName + (toString suffix); };
   genPrefix = suffix: { moduleName, ... }: "${moduleName}${suffix}";
 
-  # wrap an expression in parentheses if necessary
-  # probably not the best heuristics, but good enough to make the output readable
-  wrapSafe = s:
-    (builtins.match
-      "^[-\"a-zA-Z0-9_.()]*$"
-      (builtins.replaceStrings [ "[" "]" ] [ "" "" ] s))
-    != null;
-  wrapExpr = s: if wrapSafe s then s else "(${s})";
-
-  # Same, but for table keys
-  keySafe = s: (builtins.match "^[a-zA-Z_][_a-zA-Z0-9]*$" s) != null;
+  # wrap a key for table constructor
+  keySafe = s: (builtins.match "^[a-zA-Z_][a-zA-Z_0-9]*$" s) != null;
   wrapKey = scope: s: if keySafe s then s else "[${notlua.utils.compileExpr scope s}]";
 
   # Create a variable name with a prefix and scope
@@ -207,7 +198,7 @@ let
 
   notlua = rec {
     utils = rec {
-      inherit reduceArity applyVar applyVars wrapKey wrapExpr varName pushName pushScope checkType luaType humanType ident;
+      inherit reduceArity applyVar applyVars wrapKey varName pushName pushScope checkType luaType humanType ident;
 
       # compile a function. First argument is state, second argument is function name, whether it's vararg,
       # and if it has a name, whether it should be local; third argument is function itself
@@ -217,7 +208,7 @@ let
           res' = applyVars null prefix scope func;
           argc' = res'.argc;
           argc = if var then argc' - 1 else argc';
-          res = if var then (applyVars argc prefix scope func).result (keywords.ERAW "arg") else res'.result;
+          res = if var then (applyVars argc prefix scope func).result (keywords.ERAW "...") else res'.result;
           header =
             if name == "" then
               "function"
@@ -232,14 +223,20 @@ let
           ${ident (compileStmt (pushScope argc state) res)}
           end'';
 
+      # only used for operators
       compileWrapExpr = state: expr:
+        if !(isAttrs expr) || (isAttrs expr && (expr?__wrapSafe__ && expr.__wrapSafe__ == true))
+        then compileExpr state expr
+        else compilePrefixExpr state expr;
+
+      # prefixexp ::= var | functioncall | `(´ exp `)´
+      compilePrefixExpr = state: expr:
         let compiled = compileExpr state expr; in
         if
-          (isAttrs expr && expr?__wrapSafe__ && expr.__wrapSafe__ == true)
-          || !(isAttrs expr)
+          (isAttrs expr && expr?__prefixExp__ && expr.__prefixExp__ == true)
           || validVar expr
         then compiled
-        else wrapExpr compiled;
+        else "(${compiled})";
 
       compileExpr = state: expr:
         if isString expr then builtins.toJSON expr
@@ -293,7 +290,7 @@ let
         inherit keywords utils;
       });
 
-    keywords = let inherit (utils) compileExpr compileWrapExpr compileFunc compileStmt; in rec {
+    keywords = let inherit (utils) compileExpr compileWrapExpr compilePrefixExpr compileFunc compileStmt; in rec {
       # pass some raw code to lua directly
       # string -> expr&stmt
       RAW = code: MACRO (_: code);
@@ -349,7 +346,7 @@ let
         let
           self = EMACRO
             ({ __state__, ... }:
-              "${compileWrapExpr __state__ expr}.${name}")
+              "${compilePrefixExpr __state__ expr}.${name}")
           // (if validVar expr then { __validVar__ = true; } else { });
         in
         self // (
@@ -380,27 +377,29 @@ let
             + (if __maxArity__ != null then "at most ${toString __maxArity__}; " else "")
             + "found ${toString (length __args__)}");
           compileExpr __state__ (APPLY (UNSAFE_CALL func) __args__)
-        )) // { __wrapSafe__ = true; };
+        )) // { __prefixExp__ = true; };
       UNSAFE_CALL = func: MACRO'
         ({ __args__, __state__, ... }:
-          "${compileWrapExpr __state__ func}(${catComma' (map (compileExpr __state__) __args__)})"
-        ) // { __wrapSafe__ = true; };
+          "${compilePrefixExpr __state__ func}(${catComma' (map (compileExpr __state__) __args__)})"
+        ) // { __prefixExp__ = true; };
 
       # Call a method
       # corresponding lua code: someTable:someFunc()
       # expr -> identifier -> arg1 -> ... -> argN -> expr&stmt
-      MCALL = val: name: MACRO'
-        ({ __args__, __state__, ... }:
-          assert lib.assertMsg
-            (elem (humanType val) [ null "unknown" "table" ])
-            ("Calling a method of a ${humanType val} (${compileExpr __state__ val}) might be a bad idea! "
-              + "If you still want to do it, use UNSAFE_MCALL instead of MCALL");
-          compileExpr __state__ (APPLY (UNSAFE_MCALL val name) __args__)
-        ) // { __wrapSafe__ = true; };
-      UNSAFE_MCALL = val: name: MACRO'
-        ({ __args__, __state__, ... }:
-          "${compileWrapExpr __state__ val}:${name}(${catComma' (map (compileExpr __state__) __args__)})"
-        ) // { __type__ = null; __wrapSafe__ = true; };
+      MCALL = val: name:
+        let
+          func = PROP val name;
+        in
+          CALL func // (MACRO' ({ __args__, __state__, ... }:
+            builtins.seq (compileExpr __state__ (APPLY (CALL func val) __args__)) (compileExpr __state__ (UNSAFE_MCALL val name))
+          ));
+      UNSAFE_MCALL = val: name:
+        let
+          func = PROP val name;
+        in
+        UNSAFE_CALL func // (MACRO' ({ __args__, __state__, ... }:
+          "${compilePrefixExpr __state__ val}:${name}(${catComma' (map (compileExpr __state__) __args__)})"
+        ));
 
       # corresponding lua code: a = b
       # expr -> expr -> stmt
@@ -447,7 +446,8 @@ let
           (__typeCheck__ == null || __typeCheck__ expr)
           ("Trying to apply `${op}` to an expression ${compileExpr __state__ expr} of type ${humanType expr}! "
             + "If that's what you intended, try OP1 \"${op}\" <expr> instead.");
-        "${op}${compileWrapExpr __state__ expr}");
+          "${op}${compileWrapExpr __state__ expr}")
+        // { __wrapSafe__ = true; };
 
       # The following operators have the signature
       # expr -> expr
@@ -665,7 +665,7 @@ let
       UNSAFE_IDX = table: key:
         let
           self = EMACRO ({ __state__, ... }:
-            "${compileWrapExpr __state__ table}[${compileExpr __state__ key}]")
+            "${compilePrefixExpr __state__ table}[${compileExpr __state__ key}]")
           // (if validVar table then { __validVar__ = true; } else { });
         in
         self
