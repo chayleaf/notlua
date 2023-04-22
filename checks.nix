@@ -99,8 +99,8 @@ assert chk
 };
 assert chk
 {
-  expr = MCALL (ERAW "test") "method";
-  raw = "test:method()";
+  expr = MCALL (ERAW "test") "method" 5 6;
+  raw = "test:method(5, 6)";
 };
 assert chk
 {

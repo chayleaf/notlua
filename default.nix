@@ -391,7 +391,7 @@ let
           func = PROP val name;
         in
         CALL func // (MACRO' ({ __args__, __state__, ... }:
-          builtins.seq (compileExpr __state__ (APPLY (CALL func val) __args__)) (compileExpr __state__ (UNSAFE_MCALL val name))
+          builtins.seq (compileExpr __state__ (APPLY (CALL func val) __args__)) (compileExpr __state__ (APPLY (UNSAFE_MCALL val name) __args__))
         ));
       UNSAFE_MCALL = val: name:
         let
