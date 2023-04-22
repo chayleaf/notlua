@@ -390,9 +390,9 @@ let
         let
           func = PROP val name;
         in
-          CALL func // (MACRO' ({ __args__, __state__, ... }:
-            builtins.seq (compileExpr __state__ (APPLY (CALL func val) __args__)) (compileExpr __state__ (UNSAFE_MCALL val name))
-          ));
+        CALL func // (MACRO' ({ __args__, __state__, ... }:
+          builtins.seq (compileExpr __state__ (APPLY (CALL func val) __args__)) (compileExpr __state__ (UNSAFE_MCALL val name))
+        ));
       UNSAFE_MCALL = val: name:
         let
           func = PROP val name;
@@ -441,13 +441,14 @@ let
         );
 
       # opName -> expr -> expr
-      OP1 = op: expr: EMACRO ({ __state__, __typeCheck__ ? null, ... }:
-        assert lib.assertMsg
-          (__typeCheck__ == null || __typeCheck__ expr)
-          ("Trying to apply `${op}` to an expression ${compileExpr __state__ expr} of type ${humanType expr}! "
-            + "If that's what you intended, try OP1 \"${op}\" <expr> instead.");
+      OP1 = op: expr: EMACRO
+        ({ __state__, __typeCheck__ ? null, ... }:
+          assert lib.assertMsg
+            (__typeCheck__ == null || __typeCheck__ expr)
+            ("Trying to apply `${op}` to an expression ${compileExpr __state__ expr} of type ${humanType expr}! "
+              + "If that's what you intended, try OP1 \"${op}\" <expr> instead.");
           "${op}${compileWrapExpr __state__ expr}")
-        // { __wrapSafe__ = true; };
+      // { __wrapSafe__ = true; };
 
       # The following operators have the signature
       # expr -> expr
@@ -650,22 +651,24 @@ let
       # table -> key -> expr
       IDX = table: key:
         let
-          self = EMACRO ({ __state__, ... }:
-            assert lib.assertMsg
-              ((isTypeOrHasMeta [ "table" ] "__index" table)
-                || (isTypeOrHasMeta [ "table" ] "__newindex" table))
-              "Unable to get key ${compileExpr __state__ key} of a ${humanType table} ${compileExpr __state__ table}!";
-            compileExpr __state__ (UNSAFE_IDX table key))
+          self = EMACRO
+            ({ __state__, ... }:
+              assert lib.assertMsg
+                ((isTypeOrHasMeta [ "table" ] "__index" table)
+                  || (isTypeOrHasMeta [ "table" ] "__newindex" table))
+                "Unable to get key ${compileExpr __state__ key} of a ${humanType table} ${compileExpr __state__ table}!";
+              compileExpr __state__ (UNSAFE_IDX table key))
           // (if validVar table then { __validVar__ = true; } else { });
         in
         self
-        // ( (if isAttrs table && table?__entry__ then updateProps self table.__entry__ else { }))
+        // ((if isAttrs table && table?__entry__ then updateProps self table.__entry__ else { }))
         // { __wrapSafe__ = true; };
 
       UNSAFE_IDX = table: key:
         let
-          self = EMACRO ({ __state__, ... }:
-            "${compilePrefixExpr __state__ table}[${compileExpr __state__ key}]")
+          self = EMACRO
+            ({ __state__, ... }:
+              "${compilePrefixExpr __state__ table}[${compileExpr __state__ key}]")
           // (if validVar table then { __validVar__ = true; } else { });
         in
         self
