@@ -661,7 +661,7 @@ let
           // (if validVar table then { __validVar__ = true; } else { });
         in
         self
-        // ((if isAttrs table && table?__entry__ then updateProps self table.__entry__ else { }))
+        // (if isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
         // { __wrapSafe__ = true; };
 
       UNSAFE_IDX = table: key:
