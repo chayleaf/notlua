@@ -157,8 +157,15 @@ let
   pushName = suffix: state@{ moduleName, ... }: state // { moduleName = moduleName + (toString suffix); };
   genPrefix = suffix: { moduleName, ... }: "${moduleName}${suffix}";
 
+  isKeyword = s:
+    builtins.elem s [ "and" "break" "do" "else" "elseif"
+     "end" "false" "for" "function" "if" "in" "local" "nil" "not" "or"
+     "repeat" "return" "then" "true" "until" "while" ];
+
   # wrap a key for table constructor
-  keySafe = s: (builtins.match "^[a-zA-Z_][a-zA-Z_0-9]*$" s) != null;
+  keySafe = s:
+    (builtins.match "^[a-zA-Z_][a-zA-Z_0-9]*$" s) != null
+    && (!(isKeyword s));
   wrapKey = scope: s: if keySafe s then s else "[${notlua.utils.compileExpr scope s}]";
 
   # Create a variable name with a prefix and scope
@@ -346,7 +353,10 @@ let
         let
           self = EMACRO
             ({ __state__, ... }:
-              "${compilePrefixExpr __state__ expr}.${name}")
+              if isKeyword name then
+                "${compilePrefixExpr __state__ expr}[${compileExpr __state__ name}]"
+              else
+                "${compilePrefixExpr __state__ expr}.${name}")
           // (if validVar expr then { __validVar__ = true; } else { });
         in
         self // (

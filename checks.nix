@@ -326,12 +326,12 @@ assert chk
 assert chk
 {
   expr = (nvim.keywords.REQ "cmp").mapping;
-  raw = "require(\"cmp\").config.mapping";
+  raw = "require(\"cmp\").mapping";
 };
 assert chk
 {
   expr = (nvim.keywords.REQ "cmp").mapping.close;
-  raw = "require(\"cmp\").config.mapping.close";
+  raw = "require(\"cmp\").mapping.close";
 };
 assert chk
 {
@@ -360,6 +360,17 @@ assert chk
     function(m_arg1, ...)
       return ...
     end'';
+};
+assert chk {
+  expr = PROP (ERAW "test") "nil";
+  raw = ''test["nil"]'';
+};
+assert chk {
+  expr = { nil = 1; };
+  raw = ''
+    {
+      ["nil"] = 1;
+    }'';
 };
 assert eq (flake.utils.humanType (OR true null)) "boolean";
 assert eq (flake.utils.humanType (ADD 1 5)) "number";
