@@ -137,7 +137,7 @@ autogenerates bindings) and `REQ'` (same, but it executes not just
 requires, but arbitrary code, which can generate wrong bindings if you
 use it the wrong way, be careful).
 
-Not that this means you don't have to do `CALL print a b` like I wrote
+Note that this means you don't have to do `CALL print a b` like I wrote
 above, just `print a b` is enough! However, if a function has zero
 arguments, or if you want to call a table, you will still have to use
 `CALL` (or even `UNSAFE_CALL`).
