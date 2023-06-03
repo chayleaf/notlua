@@ -308,9 +308,32 @@ assert chk
 };
 assert chk
 {
-  expr = CALL (ERAW "test" // { __type__ = "function"; __minArity__ = 0; }) 5;
-  raw = "test(5)";
+  expr = CALL (ERAW "test" // { __type__ = "function"; __minArity__ = 0; });
+  raw = "test()";
 };
+assert chk
+{
+  expr = CALL
+    (ERAW "test" // {
+      __meta__.__call = { __type__ = "function"; __minArity__ = 2; };
+    }) 5 6;
+  raw = "test(5, 6)";
+};
+assert chk
+{
+  stmt = LET
+    (ERAW "test" // {
+      __meta__.__call = { __type__ = "function"; __minArity__ = 2; };
+    })
+    (x: CALL x 5);
+  raw = ''
+    local m_var1 = test
+    m_var1(5)'';
+};
+assert !(builtins.tryEval (compileExpr defaultState (CALL
+  (ERAW "test" // {
+    __meta__.__call = { __type__ = "function"; __minArity__ = 1; __maxArity__ = 1; };
+  }) 5 5 5))).success;
 assert !(builtins.tryEval (compileExpr defaultState (CALL (ERAW "test" // { __type__ = "function"; __minArity__ = 2; }) 5))).success;
 assert !(builtins.tryEval (compileExpr defaultState (CALL (ERAW "test" // { __type__ = "function"; __minArity__ = 0; __maxArity__ = 0; }) 5))).success;
 assert eq (flake.keywords.MERGE { a = 1; } [ ]) { a = 1; };

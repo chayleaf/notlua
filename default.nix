@@ -1,7 +1,7 @@
 { pkgs, lib, ... }:
 let
   inherit (builtins)
-    concatStringsSep all length elemAt genList elem foldl' hasAttr getAttr
+    concatStringsSep all length elemAt genList elem foldl'
     isAttrs isList isPath isString isFloat isInt isNull isBool isFunction;
 
   catLines = concatStringsSep "\n";
@@ -50,10 +50,7 @@ let
       type = luaType val;
       raw = notlua.keywords.ERAW name;
     in
-    if isAttrs val && (val.__meta__ or { })?__call then reduceArity 1 (luaType val.__meta__.__call) // {
-      __functor = notlua.keywords.CALL;
-    } // raw
-    else if type == null || !type?__type__ then raw
+    if type == null || !type?__type__ then raw
     else if type.__type__ == "function" then type // {
       __functor = notlua.keywords.CALL;
     } // raw
@@ -61,8 +58,7 @@ let
     else type // raw;
 
   luaType = val:
-    if isAttrs val && val?__retType__ then val.__retType__
-    else if isAttrs val && (val.__type__ or 0) == null then null
+    if isAttrs val && (val.__type__ or 0) == null then null
     else if isAttrs val && val?__type__ then
       lib.filterAttrs (k: v: elem k [ "__retType__" "__type__" "__minArity__" "__maxArity__" "__entry__" ]) val
     else if isAttrs val && val?__kind__ then null
@@ -82,6 +78,7 @@ let
     (if isFunction val then
       let argc = countArgs val;
       in { __minArity__ = argc; __maxArity__ = argc; }
+    else if isAttrs val && val?__meta__.__call then funcType (reduceArity 1 (luaType val.__meta__.__call))
     else if !(isAttrs val) || !val?__minArity__ then { }
     else if val?__maxArity__ then { inherit (val) __minArity__ __maxArity__; }
     else { inherit (val) __minArity__; }) // { __retType__ = retType val; };
@@ -110,16 +107,16 @@ let
   checkTypeAndMetaMatch = meta: args:
     let args' = builtins.filter ({ type, ... }: type != "unknown") (map (expr: { inherit expr; type = humanType expr; }) args);
     in if args' == [ ] then true
-    else if isAttrs (builtins.head args') && hasAttr meta ((builtins.head args').__meta__ or { }) then
+    else if isAttrs (builtins.head args') && (builtins.head args')?__meta__.${meta} then
       all ({ expr, ... }: isAttrs expr && (expr.__meta__ or null) == (builtins.head args').__meta__) args'
     else
       all ({ type, ... }: type == (builtins.head args').type) args';
 
   isTypeOrHasMeta = types: meta: expr:
-    (elem (humanType expr) (types ++ [ "unknown" ])) || (isAttrs expr && hasAttr meta (expr.__meta__ or { }));
+    (elem (humanType expr) (types ++ [ "unknown" ])) || (isAttrs expr && expr?__meta__.${meta});
 
   # check that no args contain the given meta key
-  noMeta = meta: expr: !(isAttrs expr) || !(hasAttr meta (expr.__meta__ or { }));
+  noMeta = meta: expr: !(isAttrs expr) || !(expr?__meta__.${meta});
 
   noMeta' = meta: args:
     all (noMeta meta) args;
@@ -137,7 +134,7 @@ let
     if type1 == null || type2 == null then { }
     else
       (
-        let ret = lib.filterAttrs (k: v: hasAttr k type2 && v == getAttr k type2) type1;
+        let ret = lib.filterAttrs (k: v: (type2.${k} or null) == v) type1;
         in if ret != { } then ret else { }
       );
 
@@ -199,7 +196,7 @@ let
       prop = notlua.keywords.PROP var;
       getProp =
         if isAttrs var
-        then (k: if hasAttr k var then getAttr k var else prop k)
+        then (k: var.${k} or (prop k))
         else prop;
     in
     if args == { } then func var
@@ -364,7 +361,7 @@ let
           // (if validVar expr then { __validVar__ = true; } else { });
         in
         self // (
-          if isAttrs expr && expr?__pathStdlib__ && hasAttr name expr then getAttr name expr
+          if isAttrs expr && expr?__pathStdlib__ && expr?${name} then expr.${name}
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
         ) // { __wrapSafe__ = true; };
@@ -380,7 +377,7 @@ let
           // (if validVar expr then { __validVar__ = true; } else { });
         in
         self // (
-          if isAttrs expr && expr?__pathStdlib__ && hasAttr name expr then getAttr name expr
+          if isAttrs expr && expr?__pathStdlib__ && expr?${name} then expr.${name}
           else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
           else { }
         ) // { __wrapSafe__ = true; };
@@ -395,9 +392,13 @@ let
       CALL = func:
         funcType func // (MACRO' ({ __minArity__ ? null, __maxArity__ ? null, __args__, __state__, ... }:
           assert lib.assertMsg
-            (!(elem (humanType func) [ "number" "boolean" "nil" "string" ]))
-            ("Calling a ${humanType __args__} (${compileExpr __state__ func}) might be a bad idea! "
-            + "If you still want to do it, use UNSAFE_CALL instead of CALL");
+            (isTypeOrHasMeta [ "function" "table" ] "__call" func)
+            (
+              ''
+                Calling a ${humanType __args__} (${compileExpr __state__ func}) might be a bad idea!
+                If you still want to do it, use UNSAFE_CALL instead of CALL
+              ''
+            );
           assert lib.assertMsg
             ((__minArity__ == null || (length __args__) >= __minArity__)
             &&
