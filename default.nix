@@ -37,10 +37,10 @@ let
     else attrs;
 
   reduceArity = n: type:
-    if isAttrs type && type?__minArity__ && type?__maxArity__ && type.__minArity__ >= n then type // {
+    if isAttrs type && type?__maxArity__ && (type.__minArity__ or (-1)) >= n then type // {
       __minArity__ = type.__minArity__ - n;
       __maxArity__ = type.__maxArity__ - n;
-    } else if isAttrs type && type?__minArity__ && type.__minArity >= n then type // {
+    } else if isAttrs type && (type.__minArity__ or (-1)) >= n then type // {
       __minArity__ = type.__minArity__ - n;
     } else type;
 
@@ -50,7 +50,7 @@ let
       type = luaType val;
       raw = notlua.keywords.ERAW name;
     in
-    if isAttrs val && val?__meta__ && val.__meta__?__call then reduceArity 1 (luaType val.__meta__.__call) // {
+    if isAttrs val && (val.__meta__ or {})?__call then reduceArity 1 (luaType val.__meta__.__call) // {
       __functor = notlua.keywords.CALL;
     } // raw
     else if type == null || !type?__type__ then raw
@@ -62,7 +62,7 @@ let
 
   luaType = val:
     if isAttrs val && val?__retType__ then val.__retType__
-    else if isAttrs val && val?__type__ && val.__type__ == null then null
+    else if isAttrs val && (val.__type__ or 0) == null then null
     else if isAttrs val && val?__type__ then
       lib.filterAttrs (k: v: elem k [ "__retType__" "__type__" "__minArity__" "__maxArity__" "__entry__" ]) val
     else if isAttrs val && val?__kind__ then null
@@ -76,7 +76,7 @@ let
 
   # check whether something is a valid "var" as per lua spec
   validVar = x:
-    isAttrs x && ((x?__validVar__ && x.__validVar__) || (x?__kind__ && x.__kind__ == "rawStdlib"));
+    isAttrs x && ((x.__validVar__ or false) || ((x.__kind__ or "") == "rawStdlib"));
 
   funcType = val:
     (if isFunction val then
@@ -96,7 +96,7 @@ let
     let
       type = luaType val;
     in
-    if type == null || !(isAttrs type) || !type?__type__ || type.__type__ == null then
+    if type == null || !(isAttrs type) || (type.__type__ or null) == null then
       "unknown"
     else type.__type__;
 
@@ -110,16 +110,16 @@ let
   checkTypeAndMetaMatch = meta: args:
     let args' = builtins.filter ({ type, ... }: type != "unknown") (map (expr: { inherit expr; type = humanType expr; }) args);
     in if args' == [ ] then true
-    else if isAttrs (builtins.head args') && (builtins.head args')?__meta__ && hasAttr meta (builtins.head args').__meta__ then
-      all ({ expr, ... }: isAttrs expr && expr?__meta__ && expr.__meta__ == (builtins.head args').__meta__) args'
+    else if isAttrs (builtins.head args') && hasAttr meta ((builtins.head args').__meta__ or {}) then
+      all ({ expr, ... }: isAttrs expr && (expr.__meta__ or null) == (builtins.head args').__meta__) args'
     else
       all ({ type, ... }: type == (builtins.head args').type) args';
 
   isTypeOrHasMeta = types: meta: expr:
-    (elem (humanType expr) (types ++ [ "unknown" ])) || (isAttrs expr && expr?__meta__ && hasAttr meta expr.__meta__);
+    (elem (humanType expr) (types ++ [ "unknown" ])) || (isAttrs expr && hasAttr meta (expr.__meta__ or {}));
 
   # check that no args contain the given meta key
-  noMeta = meta: expr: !(isAttrs expr) || !expr?__meta__ || !(hasAttr meta expr.__meta__);
+  noMeta = meta: expr: !(isAttrs expr) || !(hasAttr meta (expr.__meta__ or {}));
 
   noMeta' = meta: args:
     all (noMeta meta) args;
@@ -232,7 +232,7 @@ let
 
       # only used for operators
       compileWrapExpr = state: expr:
-        if !(isAttrs expr) || (isAttrs expr && (expr?__wrapSafe__ && expr.__wrapSafe__ == true))
+        if !(isAttrs expr) || (isAttrs expr && (expr.__wrapSafe__ or false) == true)
         then compileExpr state expr
         else compilePrefixExpr state expr;
 
@@ -240,7 +240,7 @@ let
       compilePrefixExpr = state: expr:
         let compiled = compileExpr state expr; in
         if
-          (isAttrs expr && expr?__prefixExp__ && expr.__prefixExp__ == true)
+          (isAttrs expr && (expr.__prefixExp__ or false) == true)
           || validVar expr
         then compiled
         else "(${compiled})";
@@ -276,7 +276,7 @@ let
       compileStmt = state@{ scope, ... }: stmt:
         if isList stmt then
           catLines (lib.imap0 (i: compileStmt (pushName i state)) stmt)
-        else if isAttrs stmt && stmt?__kind__ && (stmt.__kind__ == "customStmt" || stmt.__kind__ == "custom") then
+        else if isAttrs stmt && elem (stmt.__kind__ or null) [ "customStmt" "custom" ] then
           stmt.__callback__ (stmt // { __self__ = stmt; __state__ = state; })
         else throw "Trying to use an expression of type ${humanType stmt} as a statement";
 
@@ -755,16 +755,16 @@ let
               __vars__ = (lib.zipListsWith (name: value: { inherit name value; }) names vals);
             });
             kvs = lib.zipListsWith (key: val: { inherit key val; }) names values;
-            predefVars = builtins.filter ({ key, val }: val?predef && val.predef) kvs;
+            predefVars = builtins.filter ({ key, val }: val.predef or false) kvs;
             predefs = catLines (map
               ({ key, val }:
-                if !val?local || val.local then "local ${key}" else "${key} = nil")
+                if val.local or true then "local ${key}" else "${key} = nil")
               predefVars);
           in
           (if predefs == "" then "" else predefs + "\n") +
           ''
             ${catLines (map ({ key, val }:
-              "${if (!val?local || val.local) && (!val?predef || !val.predef) then "local " else ""}${key} = ${val.code}"
+              "${if val.local or true && !(val.predef or false) then "local " else ""}${key} = ${val.code}"
             ) kvs)}
             ${
               compileStmt
