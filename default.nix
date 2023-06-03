@@ -50,7 +50,7 @@ let
       type = luaType val;
       raw = notlua.keywords.ERAW name;
     in
-    if isAttrs val && (val.__meta__ or {})?__call then reduceArity 1 (luaType val.__meta__.__call) // {
+    if isAttrs val && (val.__meta__ or { })?__call then reduceArity 1 (luaType val.__meta__.__call) // {
       __functor = notlua.keywords.CALL;
     } // raw
     else if type == null || !type?__type__ then raw
@@ -110,16 +110,16 @@ let
   checkTypeAndMetaMatch = meta: args:
     let args' = builtins.filter ({ type, ... }: type != "unknown") (map (expr: { inherit expr; type = humanType expr; }) args);
     in if args' == [ ] then true
-    else if isAttrs (builtins.head args') && hasAttr meta ((builtins.head args').__meta__ or {}) then
+    else if isAttrs (builtins.head args') && hasAttr meta ((builtins.head args').__meta__ or { }) then
       all ({ expr, ... }: isAttrs expr && (expr.__meta__ or null) == (builtins.head args').__meta__) args'
     else
       all ({ type, ... }: type == (builtins.head args').type) args';
 
   isTypeOrHasMeta = types: meta: expr:
-    (elem (humanType expr) (types ++ [ "unknown" ])) || (isAttrs expr && hasAttr meta (expr.__meta__ or {}));
+    (elem (humanType expr) (types ++ [ "unknown" ])) || (isAttrs expr && hasAttr meta (expr.__meta__ or { }));
 
   # check that no args contain the given meta key
-  noMeta = meta: expr: !(isAttrs expr) || !(hasAttr meta (expr.__meta__ or {}));
+  noMeta = meta: expr: !(isAttrs expr) || !(hasAttr meta (expr.__meta__ or { }));
 
   noMeta' = meta: args:
     all (noMeta meta) args;
@@ -158,9 +158,29 @@ let
   genPrefix = suffix: { moduleName, ... }: "${moduleName}${suffix}";
 
   isKeyword = s:
-    builtins.elem s [ "and" "break" "do" "else" "elseif"
-     "end" "false" "for" "function" "if" "in" "local" "nil" "not" "or"
-     "repeat" "return" "then" "true" "until" "while" ];
+    builtins.elem s [
+      "and"
+      "break"
+      "do"
+      "else"
+      "elseif"
+      "end"
+      "false"
+      "for"
+      "function"
+      "if"
+      "in"
+      "local"
+      "nil"
+      "not"
+      "or"
+      "repeat"
+      "return"
+      "then"
+      "true"
+      "until"
+      "while"
+    ];
 
   # wrap a key for table constructor
   keySafe = s:

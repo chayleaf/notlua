@@ -301,6 +301,18 @@ assert !(builtins.tryEval (compileStmt defaultState (LETREC
         ELSE
         (RETURN (ADD (fib (SUB n 1) 5) (fib (SUB n 2))))))
   (fib: lua.stdlib.print (fib 5))))).success;
+assert chk
+{
+  expr = CALL (ERAW "test" // { __type__ = "function"; __minArity__ = 1; }) 5;
+  raw = "test(5)";
+};
+assert chk
+{
+  expr = CALL (ERAW "test" // { __type__ = "function"; __minArity__ = 0; }) 5;
+  raw = "test(5)";
+};
+assert !(builtins.tryEval (compileExpr defaultState (CALL (ERAW "test" // { __type__ = "function"; __minArity__ = 2; }) 5))).success;
+assert !(builtins.tryEval (compileExpr defaultState (CALL (ERAW "test" // { __type__ = "function"; __minArity__ = 0; __maxArity__ = 0; }) 5))).success;
 assert eq (flake.keywords.MERGE { a = 1; } [ ]) { a = 1; };
 assert eq (flake.keywords.MERGE { a = 1; } [ 1 ]) { a = 1; __list__ = [ 1 ]; };
 assert eq (flake.keywords.MERGE { a = 1; __list__ = [ 1 ]; } [ 2 ]) { a = 1; __list__ = [ 1 2 ]; };
@@ -361,11 +373,13 @@ assert chk
       return ...
     end'';
 };
-assert chk {
+assert chk
+{
   expr = PROP (ERAW "test") "nil";
   raw = ''test["nil"]'';
 };
-assert chk {
+assert chk
+{
   expr = { nil = 1; };
   raw = ''
     {
