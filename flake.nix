@@ -10,8 +10,7 @@
     in
     {
       nixosModules.default = import ./.;
-      # this isn't an officially supported third-party flake output
-      # homeManagerModules.default = ./.;
+      homeManagerModules.default = import ./.;
       lib = forEachSystem ({ pkgs, ... }: (import ./. { inherit pkgs; inherit (pkgs) lib; }).config.notlua);
       formatter = forEachSystem ({ pkgs, ... }: pkgs.nixpkgs-fmt);
       checks.x86_64-linux.default = let pkgs = nixpkgs.legacyPackages.x86_64-linux; in pkgs.callPackage ./checks.nix {

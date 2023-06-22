@@ -37,10 +37,10 @@ let
     else attrs;
 
   reduceArity = n: type:
-    if isAttrs type && type?__maxArity__ && (type.__minArity__ or (-1)) >= n then type // {
+    if type?__maxArity__ && (type.__minArity__ or (-1)) >= n then type // {
       __minArity__ = type.__minArity__ - n;
       __maxArity__ = type.__maxArity__ - n;
-    } else if isAttrs type && (type.__minArity__ or (-1)) >= n then type // {
+    } else if (type.__minArity__ or (-1)) >= n then type // {
       __minArity__ = type.__minArity__ - n;
     } else type;
 
@@ -58,10 +58,10 @@ let
     else type // raw;
 
   luaType = val:
-    if isAttrs val && (val.__type__ or 0) == null then null
-    else if isAttrs val && val?__type__ then
+    if (val.__type__ or 0) == null then null
+    else if val?__type__ then
       lib.filterAttrs (k: v: elem k [ "__retType__" "__type__" "__minArity__" "__maxArity__" "__entry__" ]) val
-    else if isAttrs val && val?__kind__ then null
+    else if val?__kind__ then null
     else if isList val || isAttrs val then { __type__ = "table"; }
     else if isPath val || isString val then { __type__ = "string"; }
     else if isInt val || isFloat val then { __type__ = "number"; }
@@ -72,28 +72,28 @@ let
 
   # check whether something is a valid "var" as per lua spec
   validVar = x:
-    isAttrs x && ((x.__validVar__ or false) || ((x.__kind__ or "") == "rawStdlib"));
+    (x.__validVar__ or false) || ((x.__kind__ or "") == "rawStdlib");
 
   funcType = val:
     (if isFunction val then
       let argc = countArgs val;
       in { __minArity__ = argc; __maxArity__ = argc; }
-    else if isAttrs val && val?__meta__.__call then funcType (reduceArity 1 (luaType val.__meta__.__call))
-    else if !(isAttrs val) || !val?__minArity__ then { }
+    else if val?__meta__.__call then funcType (reduceArity 1 (luaType val.__meta__.__call))
+    else if !val?__minArity__ then { }
     else if val?__maxArity__ then { inherit (val) __minArity__ __maxArity__; }
     else { inherit (val) __minArity__; }) // { __retType__ = retType val; };
 
   retType = val:
     if isFunction val then let applied = applyVars null "" 1 val; in luaType applied.result
-    else if isAttrs val && val?__retType__ then val.__retType__
-    else if isAttrs val && val?__type__ && val.__type__ != "function" then luaType val
+    else if val?__retType__ then val.__retType__
+    else if (val.__type__ or "function") != "function" then luaType val
     else null;
 
   humanType = val:
     let
       type = luaType val;
     in
-    if type == null || !(isAttrs type) || (type.__type__ or null) == null then
+    if type == null || (type.__type__ or null) == null then
       "unknown"
     else type.__type__;
 
@@ -107,16 +107,16 @@ let
   checkTypeAndMetaMatch = meta: args:
     let args' = builtins.filter ({ type, ... }: type != "unknown") (map (expr: { inherit expr; type = humanType expr; }) args);
     in if args' == [ ] then true
-    else if isAttrs (builtins.head args') && (builtins.head args')?__meta__.${meta} then
-      all ({ expr, ... }: isAttrs expr && (expr.__meta__ or null) == (builtins.head args').__meta__) args'
+    else if (builtins.head args')?__meta__.${meta} then
+      all ({ expr, ... }: (expr.__meta__ or null) == (builtins.head args').__meta__) args'
     else
       all ({ type, ... }: type == (builtins.head args').type) args';
 
   isTypeOrHasMeta = types: meta: expr:
-    (elem (humanType expr) (types ++ [ "unknown" ])) || (isAttrs expr && expr?__meta__.${meta});
+    elem (humanType expr) (types ++ [ "unknown" ]) || expr?__meta__.${meta};
 
   # check that no args contain the given meta key
-  noMeta = meta: expr: !(isAttrs expr) || !(expr?__meta__.${meta});
+  noMeta = meta: expr: !(expr?__meta__.${meta});
 
   noMeta' = meta: args:
     all (noMeta meta) args;
@@ -249,7 +249,7 @@ let
 
       # only used for operators
       compileWrapExpr = state: expr:
-        if !(isAttrs expr) || (isAttrs expr && (expr.__wrapSafe__ or false) == true)
+        if !(isAttrs expr) || ((expr.__wrapSafe__ or false) == true)
         then compileExpr state expr
         else compilePrefixExpr state expr;
 
@@ -257,7 +257,7 @@ let
       compilePrefixExpr = state: expr:
         let compiled = compileExpr state expr; in
         if
-          (isAttrs expr && (expr.__prefixExp__ or false) == true)
+          ((expr.__prefixExp__ or false) == true)
           || validVar expr
         then compiled
         else "(${compiled})";
@@ -293,7 +293,7 @@ let
       compileStmt = state@{ scope, ... }: stmt:
         if isList stmt then
           catLines (lib.imap0 (i: compileStmt (pushName i state)) stmt)
-        else if isAttrs stmt && elem (stmt.__kind__ or null) [ "customStmt" "custom" ] then
+        else if elem (stmt.__kind__ or null) [ "customStmt" "custom" ] then
           stmt.__callback__ (stmt // { __self__ = stmt; __state__ = state; })
         else throw "Trying to use an expression of type ${humanType stmt} as a statement";
 
@@ -325,7 +325,7 @@ let
 
       LIST_PART = list:
         if isList list then list
-        else if isAttrs list && list?__list__ then list.__list__
+        else if list?__list__ then list.__list__
         else if isAttrs list then [ ]
         else throw "this isn't a table";
 
@@ -361,8 +361,8 @@ let
           // (if validVar expr then { __validVar__ = true; } else { });
         in
         self // (
-          if isAttrs expr && expr?__pathStdlib__ && expr?${name} then expr.${name}
-          else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
+          if expr?__pathStdlib__ && expr?${name} then expr.${name}
+          else if expr?__entry__ then updateProps self expr.__entry__
           else { }
         ) // { __wrapSafe__ = true; };
 
@@ -377,8 +377,8 @@ let
           // (if validVar expr then { __validVar__ = true; } else { });
         in
         self // (
-          if isAttrs expr && expr?__pathStdlib__ && expr?${name} then expr.${name}
-          else if isAttrs expr && expr?__entry__ then updateProps self expr.__entry__
+          if expr?__pathStdlib__ && expr?${name} then expr.${name}
+          else if expr?__entry__ then updateProps self expr.__entry__
           else { }
         ) // { __wrapSafe__ = true; };
 
@@ -692,7 +692,7 @@ let
           // (if validVar table then { __validVar__ = true; } else { });
         in
         self
-        // (if isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
+        // (if table?__entry__ then updateProps self table.__entry__ else { })
         // { __wrapSafe__ = true; };
 
       UNSAFE_IDX = table: key:
@@ -703,7 +703,7 @@ let
           // (if validVar table then { __validVar__ = true; } else { });
         in
         self
-        // (if builtins.isAttrs table && table?__entry__ then updateProps self table.__entry__ else { })
+        // (if table?__entry__ then updateProps self table.__entry__ else { })
         // { __wrapSafe__ = true; };
 
       # Creates variables and passes them to the function
