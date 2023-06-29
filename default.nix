@@ -93,7 +93,7 @@ let
     let
       type = luaType val;
     in
-    if type == null || (type.__type__ or null) == null then
+    if (type.__type__ or null) == null then
       "unknown"
     else type.__type__;
 
@@ -105,18 +105,20 @@ let
         (lib.attrValues (lib.zipAttrs [ type1 type2 ]));
 
   checkTypeAndMetaMatch = meta: args:
-    let args' = builtins.filter ({ type, ... }: type != "unknown") (map (expr: { inherit expr; type = humanType expr; }) args);
+    let
+      args' = builtins.filter ({ type, ... }: type != "unknown") (map (expr: { inherit expr; type = humanType expr; }) args);
+      head = builtins.head args';
     in if args' == [ ] then true
-    else if (builtins.head args')?__meta__.${meta} then
-      all ({ expr, ... }: (expr.__meta__ or null) == (builtins.head args').__meta__) args'
+    else if head?__meta__.${meta} then
+      all ({ expr, type }: type == head.type && (expr.__meta__ or null) == head.__meta__) args'
     else
-      all ({ type, ... }: type == (builtins.head args').type) args';
+      all ({ type, ... }: type == head.type) args';
 
   isTypeOrHasMeta = types: meta: expr:
     elem (humanType expr) (types ++ [ "unknown" ]) || expr?__meta__.${meta};
 
   # check that no args contain the given meta key
-  noMeta = meta: expr: !(expr?__meta__.${meta});
+  noMeta = meta: expr: !expr?__meta__.${meta};
 
   noMeta' = meta: args:
     all (noMeta meta) args;
