@@ -108,7 +108,8 @@ let
     let
       args' = builtins.filter ({ type, ... }: type != "unknown") (map (expr: { inherit expr; type = humanType expr; }) args);
       head = builtins.head args';
-    in if args' == [ ] then true
+    in
+    if args' == [ ] then true
     else if head?__meta__.${meta} then
       all ({ expr, type }: type == head.type && (expr.__meta__ or null) == head.__meta__) args'
     else
@@ -257,7 +258,9 @@ let
 
       # prefixexp ::= var | functioncall | `(´ exp `)´
       compilePrefixExpr = state: expr:
-        let compiled = compileExpr state expr; in
+        let
+          compiled = compileExpr state expr;
+        in
         if
           ((expr.__prefixExp__ or false) == true)
           || validVar expr
@@ -281,11 +284,12 @@ let
             lists = notlua.keywords.LIST_PART expr;
             attrs = notlua.keywords.ATTR_PART expr;
           in
-          if lists == [ ] && attrs == { } then "{}" else
-          ("{"
-            + (if lists == [ ] then "" else "\n" + (identCat (map (x: compileExpr state x + ";") lists)))
-            + (if attrs == { } then "" else "\n" + (identCat (lib.mapAttrsToList (k: v: "${wrapKey state k} = ${compileExpr state v};") attrs)))
-            + "\n}")
+          if lists == [ ] && attrs == { } then "{}"
+          else
+            ("{"
+              + (if lists == [ ] then "" else "\n" + (identCat (map (x: compileExpr state x + ";") lists)))
+              + (if attrs == { } then "" else "\n" + (identCat (lib.mapAttrsToList (k: v: "${wrapKey state k} = ${compileExpr state v};") attrs)))
+              + "\n}")
         else if expr.__kind__ == "rawStdlib" then
           expr.__pathStdlib__
         else if expr.__kind__ == "customExpr" || expr.__kind__ == "custom" then
@@ -799,6 +803,7 @@ let
         arg2;
     };
   };
+
 in
 {
   options = {
