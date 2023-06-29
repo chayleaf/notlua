@@ -38,7 +38,11 @@ to prefix variables, so you can put multiple modules in a single .lua
 file), and the statements to compile to lua. The other functions are
 internal functions mostly only useful for macro developers.
 
-`notlua.keywords` contains various keywords for writing the programs:
+There are many keywords provided. You can choose your preferred keyword
+case by using `notlua.screamingKeywords` (`KEYWORD_NAME`),
+`notlua.pascalKeywords` (`KeywordName`) or `notlua.camelKeywords`
+(`keywordName`). Below, the list of keywords in `screamingKeywords` is
+provided, which is the default and also available via `notlua.keywords`:
 
 - `RAW <code>`: escape raw Lua code (Use `ERAW` or `SRAW` to hint that
   it's a statement/expression)

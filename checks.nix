@@ -1,7 +1,7 @@
 { flake, lib, pkgs }:
 let
   inherit (flake.utils) compileExpr compileStmt;
-  inherit (flake.keywords) ERAW SRAW PROP APPLY CALL MCALL SET OP2 AND ADD OR UNM FORIN RETURN DEFUN DEFUN_VAR IF ELSE IDX LET LETREC MACRO LT SUB CAT;
+  inherit (flake.screamingKeywords) ERAW SRAW PROP APPLY CALL MCALL SET OP2 AND ADD OR UNM FORIN RETURN DEFUN DEFUN_VAR IF ELSE IDX LET LETREC MACRO LT SUB CAT;
   nvim = flake.neovim { plugins = [ pkgs.vimPlugins.nvim-cmp ]; };
   lua = flake.lua { };
   defaultState = { moduleName = "m"; scope = 1; };
@@ -9,7 +9,7 @@ let
     let result = if stmt != null then compileStmt defaultState stmt else compileExpr defaultState expr;
     in lib.assertMsg (result == raw) "Expected ${raw}, found ${result}";
   eq = a: b: lib.assertMsg (a == b) "Expected ${builtins.toJSON b}, found ${builtins.toJSON a}";
-  inherit (nvim.keywords) REQ;
+  inherit (nvim.screamingKeywords) REQ;
 in
 assert !(builtins.tryEval (compileStmt defaultState (nvim.stdlib.table.remove 1 2 3))).success;
 assert chk
@@ -239,19 +239,19 @@ assert chk
 };
 assert chk
 {
-  expr = (lua.keywords.REQ "cjson").encode;
+  expr = (lua.screamingKeywords.REQ "cjson").encode;
   raw = "require(\"cjson\").encode";
 };
 assert chk
 {
-  stmt = LET (lua.keywords.REQ "cjson") (cjson: RETURN cjson.encode);
+  stmt = LET (lua.screamingKeywords.REQ "cjson") (cjson: RETURN cjson.encode);
   raw = ''
     local m_var1 = require("cjson")
     return m_var1.encode'';
 };
 assert chk
 {
-  stmt = LET (lua.keywords.REQ' (PROP (lua.stdlib.require "cjson") "encode")) (lua.keywords.REQ' (lua.stdlib.require "cjson")) (encode: _: RETURN encode);
+  stmt = LET (lua.screamingKeywords.REQ' (PROP (lua.stdlib.require "cjson") "encode")) (lua.screamingKeywords.REQ' (lua.stdlib.require "cjson")) (encode: _: RETURN encode);
   raw = ''
     local m_var1 = require("cjson").encode
     local m_var2 = require("cjson")
@@ -259,7 +259,7 @@ assert chk
 };
 assert chk
 {
-  stmt = (LET (lua.keywords.REQ "cjson") ({ encode, ... }: encode 5));
+  stmt = (LET (lua.screamingKeywords.REQ "cjson") ({ encode, ... }: encode 5));
   raw = ''
     local m_var1 = require("cjson")
     m_var1.encode(5)'';
@@ -336,12 +336,12 @@ assert !(builtins.tryEval (compileExpr defaultState (CALL
   }) 5 5 5))).success;
 assert !(builtins.tryEval (compileExpr defaultState (CALL (ERAW "test" // { __type__ = "function"; __minArity__ = 2; }) 5))).success;
 assert !(builtins.tryEval (compileExpr defaultState (CALL (ERAW "test" // { __type__ = "function"; __minArity__ = 0; __maxArity__ = 0; }) 5))).success;
-assert eq (flake.keywords.MERGE { a = 1; } [ ]) { a = 1; };
-assert eq (flake.keywords.MERGE { a = 1; } [ 1 ]) { a = 1; __list__ = [ 1 ]; };
-assert eq (flake.keywords.MERGE { a = 1; __list__ = [ 1 ]; } [ 2 ]) { a = 1; __list__ = [ 1 2 ]; };
+assert eq (flake.screamingKeywords.MERGE { a = 1; } [ ]) { a = 1; };
+assert eq (flake.screamingKeywords.MERGE { a = 1; } [ 1 ]) { a = 1; __list__ = [ 1 ]; };
+assert eq (flake.screamingKeywords.MERGE { a = 1; __list__ = [ 1 ]; } [ 2 ]) { a = 1; __list__ = [ 1 2 ]; };
 assert chk
 {
-  expr = flake.keywords.MERGE { a = 1; } [ 1 ];
+  expr = flake.screamingKeywords.MERGE { a = 1; } [ 1 ];
   raw = ''
     {
       1;
@@ -360,12 +360,12 @@ assert chk
 };
 assert chk
 {
-  expr = (nvim.keywords.REQ "cmp").mapping;
+  expr = (nvim.screamingKeywords.REQ "cmp").mapping;
   raw = "require(\"cmp\").mapping";
 };
 assert chk
 {
-  expr = (nvim.keywords.REQ "cmp").mapping.close;
+  expr = (nvim.screamingKeywords.REQ "cmp").mapping.close;
   raw = "require(\"cmp\").mapping.close";
 };
 assert chk

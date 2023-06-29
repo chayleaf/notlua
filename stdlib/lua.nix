@@ -49,4 +49,15 @@ in
   keywords = {
     inherit (common) REQ REQ';
   };
+  screamingKeywords = {
+    inherit (common) REQ REQ';
+  };
+  pascalKeywords = {
+    Req = common.REQ;
+    Req' = common.REQ';
+  };
+  camelKeywords = {
+    req = common.REQ;
+    req' = common.REQ';
+  };
 }

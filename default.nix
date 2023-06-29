@@ -320,7 +320,8 @@ let
         inherit keywords utils;
       });
 
-    keywords = let inherit (utils) compileExpr compileWrapExpr compilePrefixExpr compileFunc compileStmt; in rec {
+    keywords = screamingKeywords;
+    screamingKeywords = let inherit (utils) compileExpr compileWrapExpr compilePrefixExpr compileFunc compileStmt; in rec {
       # pass some raw code to lua directly
       # string -> expr&stmt
       RAW = code: MACRO (_: code);
@@ -802,6 +803,17 @@ let
         arg1
         arg2;
     };
+    pascalKeywords = lib.mapAttrs' (name: value: {
+      name = lib.concatMapStrings (s: builtins.substring 0 1 s + lib.toLower (builtins.substring 1 (-1) s)) (lib.splitString "_" name);
+      inherit value;
+    }) screamingKeywords;
+    camelKeywords = lib.mapAttrs' (name: value: {
+      name = lib.concatImapStrings (i: s:
+        if i == 1 then lib.toLower s
+        else builtins.substring 0 1 s + lib.toLower (builtins.substring 1 (-1) s)
+      ) (lib.splitString "_" name);
+      inherit value;
+    }) screamingKeywords;
   };
 
 in

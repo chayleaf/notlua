@@ -12,7 +12,7 @@ let
   };
   inherit (notlua.utils) compile;
 in
-with notlua-lua.stdlib; with notlua.keywords; with notlua-lua.keywords;
+with notlua-lua.stdlib; with notlua.screamingKeywords; with notlua-lua.screamingKeywords;
 
 compile "main" [
   (print "Hello, World!")
