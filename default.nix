@@ -580,9 +580,11 @@ let
           for ${catComma varNames} in ${compileExpr __state__ expr} do
           ${ident (compileStmt (pushScope argc' __state__) res.result)}
           end'');
+      FOR_IN' = FORIN';
 
       # expr -> (expr1 -> ... -> exprN -> stmts) -> stmts
       FORIN = FORIN' null;
+      FOR_IN = FORIN;
 
       FORRANGE = arg1: arg2: arg3: SMACRO'
         ({ __args__, __state__, ... }:
@@ -607,6 +609,7 @@ let
         arg1
         arg2
         arg3;
+      FOR_RANGE = FORRANGE;
 
       WHILE = cond: body: SMACRO ({ __state__, ... }: ''
         while ${compileExpr __state__ cond} do
@@ -745,6 +748,7 @@ let
               predef = true;
             })
           __vars__);
+      LET_REC = LETREC;
 
       # Process arbitrary code during compilation
       # (macroArgs -> string) -> stmt&expr
@@ -830,6 +834,9 @@ in
     };
   };
   config = {
+    _module.args = {
+      inherit notlua;
+    };
     inherit notlua;
   };
 }

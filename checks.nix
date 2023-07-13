@@ -5,9 +5,9 @@ let
   nvim = flake.neovim { plugins = [ pkgs.vimPlugins.nvim-cmp ]; };
   lua = flake.lua { };
   defaultState = { moduleName = "m"; scope = 1; };
-  chk = { stmt ? null, expr ? null, raw }:
+  chk = { stmt ? null, expr ? null, raw, raw2 ? null }:
     let result = if stmt != null then compileStmt defaultState stmt else compileExpr defaultState expr;
-    in lib.assertMsg (result == raw) "Expected ${raw}, found ${result}";
+    in lib.assertMsg (result == raw || (raw2 != null && result == raw2)) "Expected ${raw}, found ${result}";
   eq = a: b: lib.assertMsg (a == b) "Expected ${builtins.toJSON b}, found ${builtins.toJSON a}";
   inherit (nvim.screamingKeywords) REQ;
 in
@@ -362,11 +362,13 @@ assert chk
 {
   expr = (nvim.screamingKeywords.REQ "cmp").mapping;
   raw = "require(\"cmp\").mapping";
+  raw2 = "require(\"cmp\").config.mapping";
 };
 assert chk
 {
   expr = (nvim.screamingKeywords.REQ "cmp").mapping.close;
   raw = "require(\"cmp\").mapping.close";
+  raw2 = "require(\"cmp\").config.mapping.close";
 };
 assert chk
 {

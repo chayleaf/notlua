@@ -26,9 +26,10 @@ Check out [sample.nix](./sample.nix) (you can run it with
 compiled code to Lua, do `./sample.nix | lua` (assuming you have Lua
 in your `PATH` of course).
 
-To use this in your config, add `notlua.nixosModules.default` to your
-NixOS module list and then access it via `config.notlua`. Alternatively,
-use `notlua.lib.${system}`.
+To use this in your config, add this flake's output
+`nixosModules.default` to your NixOS module list and then access it via
+`config.notlua` or the module argument `notlua`. Alternatively, use this
+flake's output `lib.${system}`.
 
 ## Overview
 
