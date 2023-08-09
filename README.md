@@ -19,6 +19,9 @@ Simple examples: see [checks](./checks.nix).
 Complex examples: see [my neovim
 config](https://github.com/chayleaf/dotfiles/blob/master/home/common/nvim.nix)
 
+See also: [notnft](https://github.com/chayleaf/notnft) (nftables
+rule DSL for Nix)
+
 ## Try it out
 
 Check out [sample.nix](./sample.nix) (you can run it with
