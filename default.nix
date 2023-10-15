@@ -131,7 +131,7 @@ let
     if noMeta' meta args then { __type__ = type; } else { };
 
   canBeFalsy = expr: expr != true && elem (humanType expr) [ "unknown" "boolean" "nil" ];
-  canBeTruthy = expr: expr != false && (humanType expr == "unknown" || !(canBeFalsy expr));
+  canBeTruthy = expr: expr != false && (humanType expr == "unknown" || !canBeFalsy expr);
 
   intersectTypes = type1: type2:
     if type1 == null || type2 == null then { }
@@ -183,9 +183,7 @@ let
     ];
 
   # wrap a key for table constructor
-  keySafe = s:
-    (builtins.match "^[a-zA-Z_][a-zA-Z_0-9]*$" s) != null
-    && (!(isKeyword s));
+  keySafe = s: builtins.match "^[a-zA-Z_][a-zA-Z_0-9]*$" s != null && !isKeyword s;
   wrapKey = scope: s: if keySafe s then s else "[${notlua.utils.compileExpr scope s}]";
 
   # Create a variable name with a prefix and scope
@@ -216,7 +214,7 @@ let
     let
       self = scope: func: argc:
         if count != null && scope == (origScope + count) then { result = func; }
-        else if count == null && !(isFunction func) then { result = func; inherit argc; }
+        else if count == null && !isFunction func then { result = func; inherit argc; }
         else self (scope + 1) (applyVar func (notlua.keywords.ERAW (varName prefix scope))) (argc + 1);
     in
     self;
@@ -252,7 +250,7 @@ let
 
       # only used for operators
       compileWrapExpr = state: expr:
-        if !(isAttrs expr) || ((expr.__wrapSafe__ or false) == true)
+        if !isAttrs expr || ((expr.__wrapSafe__ or false) == true)
         then compileExpr state expr
         else compilePrefixExpr state expr;
 
@@ -531,7 +529,7 @@ let
       AND = OP2'
         (args:
           let
-            maybeTruthyCount = (lib.findFirst ({ i, x }: !(canBeTruthy x)) { i = length args; } (lib.imap0 (i: x: { inherit i x; }) args)).i;
+            maybeTruthyCount = (lib.findFirst ({ i, x }: !canBeTruthy x) { i = length args; } (lib.imap0 (i: x: { inherit i x; }) args)).i;
             maybeTruthy = if maybeTruthyCount == length args then lib.init args else lib.take maybeTruthyCount args;
             maybeTruthy' = builtins.filter canBeFalsy maybeTruthy;
             baseType = luaType (if maybeTruthyCount == length args then lib.last args else elemAt args maybeTruthyCount);
@@ -543,7 +541,7 @@ let
       OR = OP2'
         (args:
           let
-            maybeFalsyCount = (lib.findFirst ({ i, x }: !(canBeFalsy x)) { i = length args; } (lib.imap0 (i: x: { inherit i x; }) args)).i;
+            maybeFalsyCount = (lib.findFirst ({ i, x }: !canBeFalsy x) { i = length args; } (lib.imap0 (i: x: { inherit i x; }) args)).i;
             maybeFalsy = if maybeFalsyCount == length args then lib.init args else lib.take maybeFalsyCount args;
             maybeFalsy' = builtins.filter canBeTruthy maybeFalsy;
             baseType = luaType (if maybeFalsyCount == length args then lib.last args else elemAt args maybeFalsyCount);
