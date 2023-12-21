@@ -72,7 +72,7 @@ let
 
   # check whether something is a valid "var" as per lua spec
   validVar = x:
-    (x.__validVar__ or false) || ((x.__kind__ or "") == "rawStdlib");
+    x.__validVar__ or false || (x.__kind__ or "") == "rawStdlib";
 
   funcType = val:
     (if isFunction val then
@@ -250,7 +250,7 @@ let
 
       # only used for operators
       compileWrapExpr = state: expr:
-        if !isAttrs expr || ((expr.__wrapSafe__ or false) == true)
+        if !isAttrs expr || (expr.__wrapSafe__ or false) == true
         then compileExpr state expr
         else compilePrefixExpr state expr;
 
@@ -260,7 +260,7 @@ let
           compiled = compileExpr state expr;
         in
         if
-          ((expr.__prefixExp__ or false) == true)
+          (expr.__prefixExp__ or false) == true
           || validVar expr
         then compiled
         else "(${compiled})";
@@ -359,8 +359,8 @@ let
           self = EMACRO
             ({ __state__, ... }:
               assert lib.assertMsg
-                ((isTypeOrHasMeta [ "table" ] "__index" expr)
-                  || (isTypeOrHasMeta [ "table" ] "__newindex" expr))
+                (isTypeOrHasMeta [ "table" ] "__index" expr
+                  || isTypeOrHasMeta [ "table" ] "__newindex" expr)
                 "Unable to get property ${name} of a ${humanType expr}!";
               compileExpr __state__ (UNSAFE_PROP expr name))
           // (if validVar expr then { __validVar__ = true; } else { });
@@ -405,9 +405,9 @@ let
               ''
             );
           assert lib.assertMsg
-            ((__minArity__ == null || (length __args__) >= __minArity__)
+            ((__minArity__ == null || length __args__ >= __minArity__)
             &&
-            (__maxArity__ == null || (length __args__) <= __maxArity__))
+            (__maxArity__ == null || length __args__ <= __maxArity__))
             ("error: wrong function arity for ${compileExpr __state__ func}! "
             + "expected at least ${toString __minArity__}; "
             + (if __maxArity__ != null then "at most ${toString __maxArity__}; " else "")
@@ -693,8 +693,8 @@ let
           self = EMACRO
             ({ __state__, ... }:
               assert lib.assertMsg
-                ((isTypeOrHasMeta [ "table" ] "__index" table)
-                  || (isTypeOrHasMeta [ "table" ] "__newindex" table))
+                (isTypeOrHasMeta [ "table" ] "__index" table
+                  || isTypeOrHasMeta [ "table" ] "__newindex" table)
                 "Unable to get key ${compileExpr __state__ key} of a ${humanType table} ${compileExpr __state__ table}!";
               compileExpr __state__ (UNSAFE_IDX table key))
           // (if validVar table then { __validVar__ = true; } else { });
