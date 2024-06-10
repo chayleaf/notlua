@@ -106,7 +106,7 @@ let
               })
               (LET
                 # types
-                { bool = "boolean"; string = "string"; number = "number"; }
+                { bool = "boolean"; boolean = "boolean"; string = "string"; number = "number"; }
                 # keyword tables (rather than lists)
                 # yep, it's hardcoded
                 { fillchars = true; listchars = true; winhighlight = true; }

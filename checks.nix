@@ -216,6 +216,11 @@ assert chk
 };
 assert chk
 {
+  stmt = SET nvim.stdlib.vim.o.timeout true;
+  raw = ''vim.o.timeout = true'';
+};
+assert chk
+{
   stmt = LET (REQ "vim.shared") (REQ "vim._editor") (vim-shared: vim-editor: nvim.stdlib.print vim-shared);
   raw = ''
     local m_var1 = require("vim.shared")
