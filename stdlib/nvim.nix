@@ -47,15 +47,24 @@ let
 
   dumpNvimGlobals =
     let
-      inherit (keywords) LET ERAW CALL IF EQ IDX ELSE PROP CAT FORIN OR LEN;
+      inherit (keywords) LET ERAW CALL IF EQ IDX ELSE PROP CAT FORIN OR LEN SET RETURN NOT;
       inherit (common) dump12 initSetTable;
       require = CALL (ERAW "require");
       print = CALL (ERAW "print");
       pairs = CALL (ERAW "pairs");
+      table.insert = CALL (ERAW "table.insert");
+      string.gmatch = CALL (ERAW "string.gmatch");
       TYPE = CALL (ERAW "type");
     in
-    LET { } { } (require "cjson")
-      (seen: result: { encode, ... }:
+    LET { } { } { } (ERAW "vim._defer_require") (require "cjson") (a: b: [
+      (FORIN (string.gmatch b "([^.]+)") (str: SET a (IDX a str)))
+      (RETURN a)
+    ])
+      (seen: result: extra_keys: old_defer: { encode, ... }: access: [
+        (SET (ERAW "vim._defer_require") (a: b: [
+          (FORIN (pairs b) (k: v: table.insert extra_keys (CAT (CAT a ".") k)))
+          (RETURN (CALL old_defer a b))
+        ]))
         (dump12 seen (dump1: dump2:
           LET
             # dump functions
@@ -177,14 +186,19 @@ let
                   })
                   (dump2 (IDX (ERAW "vim") k) (CAT "vim." k) (IDX vim k))
                 ]))
-                (dump2 (IDX (ERAW "package.loaded") "vim.shared") "vim" vim)
-                (dump2 (IDX (ERAW "package.loaded") "vim._editor") "vim" vim)
+                (require "vim.shared")
+                (require "vim._editor")
+                (FORIN (pairs extra_keys) (k: v: access (ERAW "_G") v))
+                (FORIN (pairs (ERAW "vim._submodules")) (k: v: [
+                  (IF (NOT (IDX vim k)) (SET (IDX vim k) {}))
+                  (dump2 (IDX (ERAW "vim") k) (CAT "vim." k) (IDX vim k))
+                ]))
                 (dump2 (ERAW "_G") "" result)
                 (dumpf (require "eval") "vim.fn." (PROP vim "fn"))
                 (dumpo (require "options") "vim." vim)
                 (print (CALL encode result))
-              ]))
-        ));
+              ])))
+      ]);
 
   typeDefs = builtins.fromJSON (builtins.readFile (stdenvNoCC.mkDerivation {
     phases = [ "installPhase" ];
