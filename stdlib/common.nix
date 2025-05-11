@@ -120,7 +120,7 @@ let
       require = CALL (ERAW "require");
       print = CALL (ERAW "print");
     in
-    expr: LET { } { } (require "cjson") (seen: result: { encode, ... }:
+    expr: LET { } { } (require "rapidjson") (seen: result: { encode, ... }:
       (dump12 seen (dump1: dump2: [
         (dump1 "" expr "" result)
         (print (CALL encode (IDX result "")))

@@ -17,6 +17,9 @@
 
 let
   common = import ./common.nix { inherit lib keywords utils getExprTypeDefs typeDefs; };
+  readJson = file:
+    let contents = builtins.readFile file;
+    in assert lib.assertMsg (lib.hasPrefix "{" contents) "Invalid JSON: ${contents}"; builtins.fromJSON contents;
 
   evalAndOptions = lua: lua.buildLuaPackage {
     pname = "neovim-options-lua-and-eval-lua";
@@ -33,14 +36,14 @@ let
   };
   basicConfig = neovimUtils.makeNeovimConfig {
     extraLuaPackages = p: [
-      p.cjson
+      p.rapidjson
       (evalAndOptions p)
     ];
   };
   basicNeovim = wrapNeovimUnstable neovim-unwrapped basicConfig;
 
   pluginConfig = neovimUtils.makeNeovimConfig {
-    extraLuaPackages = p: [ p.cjson ] ++ (extraLuaPackages p);
+    extraLuaPackages = p: [ p.rapidjson ] ++ (extraLuaPackages p);
     plugins = map (plugin: if plugin?plugin then { plugin = plugin.plugin; } else { inherit plugin; }) plugins;
   };
   pluginNeovim = wrapNeovimUnstable neovim-unwrapped pluginConfig;
@@ -56,7 +59,7 @@ let
       string.gmatch = CALL (ERAW "string.gmatch");
       TYPE = CALL (ERAW "type");
     in
-    LET { } { } { } (ERAW "vim._defer_require") (require "cjson") (a: b: [
+    LET { } { } { } (ERAW "vim._defer_require") (require "rapidjson") (a: b: [
       (FORIN (string.gmatch b "([^.]+)") (str: SET a (IDX a str)))
       (RETURN a)
     ])
@@ -154,20 +157,21 @@ let
                       (init "opt" "table")
                       (init "opt_local" "table")
                       (init "opt_global" "table")
-                    ]
-                      ELSE [
+                    ] ELSE [
                       (init "opt" type')
                       (init "opt_local" type')
                       (init "opt_global" type')
                     ])
                     (init "o" type')
                     (FORIN (pairs scope) (k: v: [
-                      (IF (EQ v "global")
-                        (init "go" type'))
-                      (IF (EQ v "buffer")
-                        (init2 "bo" type'))
-                      (IF (EQ v "window")
-                        (init2 "wo" type'))
+                      (IF
+                        (EQ v "global") (init "go" type')
+                        (EQ v "buf") (init2 "bo" type')
+                        (EQ v "win") (init2 "wo" type')
+                        # old names
+                        (EQ v "buffer") (init2 "bo" type')
+                        (EQ v "windor") (init2 "wo" type')
+                        ELSE [(print "unknown var type" v) (CALL (ERAW "assert") false)])
                     ]))
                   ])))
             ])
@@ -200,7 +204,7 @@ let
               ])))
       ]);
 
-  typeDefs = builtins.fromJSON (builtins.readFile (stdenvNoCC.mkDerivation {
+  typeDefs = readJson (stdenvNoCC.mkDerivation {
     phases = [ "installPhase" ];
     name = "neovim-types.json";
     dumpProgram = writeTextFile {
@@ -212,9 +216,9 @@ let
       export HOME="$TMPDIR"
       nvim --headless -S $dumpProgram -i NONE -u NONE -n -c 'echo""|qall!' 2>$out
     '';
-  }));
+  });
 
-  getExprTypeDefs = expr: builtins.fromJSON (builtins.readFile (stdenvNoCC.mkDerivation {
+  getExprTypeDefs = expr: readJson (stdenvNoCC.mkDerivation {
     phases = [ "installPhase" ];
     name = "neovim-types-${expr}.json";
     dumpProgram = writeTextFile {
@@ -226,7 +230,7 @@ let
       export HOME="$TMPDIR"
       nvim --headless -S $dumpProgram -i NONE -u NONE -n -c 'echo""|qall!' 2>$out
     '';
-  }));
+  });
 
 in
 {

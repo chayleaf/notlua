@@ -13,7 +13,7 @@
 
 let
   common = import ./common.nix { inherit lib keywords utils getExprTypeDefs typeDefs; };
-  lua' = lua.withPackages (p: [ p.cjson ]);
+  lua' = lua.withPackages (p: [ p.rapidjson ]);
 
   typeDefs = builtins.fromJSON (builtins.readFile (stdenvNoCC.mkDerivation {
     phases = [ "installPhase" ];

@@ -249,29 +249,29 @@ assert chk
 };
 assert chk
 {
-  expr = (lua.screamingKeywords.REQ "cjson").encode;
-  raw = "require(\"cjson\").encode";
+  expr = (lua.screamingKeywords.REQ "rapidjson").encode;
+  raw = "require(\"rapidjson\").encode";
 };
 assert chk
 {
-  stmt = LET (lua.screamingKeywords.REQ "cjson") (cjson: RETURN cjson.encode);
+  stmt = LET (lua.screamingKeywords.REQ "rapidjson") (rapidjson: RETURN rapidjson.encode);
   raw = ''
-    local m_var1 = require("cjson")
+    local m_var1 = require("rapidjson")
     return m_var1.encode'';
 };
 assert chk
 {
-  stmt = LET (lua.screamingKeywords.REQ' (PROP (lua.stdlib.require "cjson") "encode")) (lua.screamingKeywords.REQ' (lua.stdlib.require "cjson")) (encode: _: RETURN encode);
+  stmt = LET (lua.screamingKeywords.REQ' (PROP (lua.stdlib.require "rapidjson") "encode")) (lua.screamingKeywords.REQ' (lua.stdlib.require "rapidjson")) (encode: _: RETURN encode);
   raw = ''
-    local m_var1 = require("cjson").encode
-    local m_var2 = require("cjson")
+    local m_var1 = require("rapidjson").encode
+    local m_var2 = require("rapidjson")
     return m_var1'';
 };
 assert chk
 {
-  stmt = (LET (lua.screamingKeywords.REQ "cjson") ({ encode, ... }: encode 5));
+  stmt = (LET (lua.screamingKeywords.REQ "rapidjson") ({ encode, ... }: encode 5));
   raw = ''
-    local m_var1 = require("cjson")
+    local m_var1 = require("rapidjson")
     m_var1.encode(5)'';
 };
 assert chk
