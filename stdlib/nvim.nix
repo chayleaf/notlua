@@ -170,7 +170,7 @@ let
                         (EQ v "win") (init2 "wo" type')
                         # old names
                         (EQ v "buffer") (init2 "bo" type')
-                        (EQ v "windor") (init2 "wo" type')
+                        (EQ v "window") (init2 "wo" type')
                         ELSE [(print "unknown var type" v) (CALL (ERAW "assert") false)])
                     ]))
                   ])))
